@@ -409,6 +409,14 @@ func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNM
 	return snmp
 }
 
+func (s *SNMP) SetDevice(device Device) {
+	s.Device = device
+}
+
+func (s *SNMP) SetSerialSend(fun func(value string)) {
+	s.TtySend = fun
+}
+
 // 关闭 SNMP 服务器。
 func (s *SNMP) Close() {
 	s.Server.Shutdown()

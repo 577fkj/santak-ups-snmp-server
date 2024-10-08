@@ -5,263 +5,16 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
-	"sync"
 	"syscall"
 	"time"
 
-	"github.com/gosnmp/gosnmp"
 	rotatelogs "github.com/lestrrat-go/file-rotatelogs"
 	"github.com/rifflock/lfshook"
 	"github.com/sirupsen/logrus"
 	"github.com/slayercat/GoSNMPServer"
 	"github.com/spf13/pflag"
-	"go.bug.st/serial"
 	"go.bug.st/serial/enumerator"
 )
-
-type Alarm struct {
-	Alarms []AlarmEntry
-	Snmp   *SNMP
-
-	NeedApply bool
-}
-
-func init() {
-	Logger = newLog("app")
-	SNMPLogger = newLog("snmp")
-}
-
-var startTime = time.Now()
-
-func getRunningTimeInSeconds() float64 {
-	return time.Since(startTime).Seconds()
-}
-
-var data = &SNMPData{
-	Ident:   &SNMPDataIdent{},
-	Battery: &SNMPDataBattery{},
-	Input:   &SNMPDataInput{},
-	Output:  &SNMPDataOutput{},
-	Bypass:  &SNMPDataBypass{},
-	Alarm:   &SNMPDataAlarm{},
-	Test:    &SNMPDataTest{},
-	Control: &SNMPDataControl{},
-	Config:  &SNMPDataConfig{},
-}
-
-var alarm = Alarm{}
-
-var Logger *logrus.Logger
-var SNMPLogger *logrus.Logger
-
-func (a *Alarm) Add(desc string) int {
-	if !strings.HasPrefix(desc, ".") {
-		oid := a.Snmp.GetOID(desc, -1)
-		if oid == "" {
-			fmt.Printf("%s not found", desc)
-			panic(desc + " not found")
-		}
-		desc = oid
-	}
-
-	index := len(a.Alarms)
-	a.AddAlarmEntry(AlarmEntry{
-		Index: index,
-		Descr: desc,
-		Time:  TimesTamp(getRunningTimeInSeconds()),
-	})
-	return index
-}
-
-func (a *Alarm) AddAlarmEntry(entry AlarmEntry) {
-	a.Alarms = append(a.Alarms, entry)
-	a.NeedApply = true
-}
-
-func (a *Alarm) Clear() {
-	a.Alarms = a.Alarms[:0]
-	a.NeedApply = true
-}
-
-func (a *Alarm) Remove(index int) {
-	if index < len(a.Alarms) {
-		a.Alarms = append(a.Alarms[:index], a.Alarms[index+1:]...)
-		a.NeedApply = true
-	}
-}
-
-func (a *Alarm) getOID(desc string) string {
-	if strings.HasPrefix(desc, ".") {
-		return desc
-	}
-	oid := a.Snmp.GetOID(desc, -1)
-	if oid == "" {
-		Logger.Errorf("%s not found", desc)
-		return ""
-	}
-	return oid
-}
-
-func (a *Alarm) RemoveWithDesc(desc string) {
-	desc = a.getOID(desc)
-	for i, alarm := range a.Alarms {
-		if alarm.Descr == desc {
-			a.Remove(i)
-			a.NeedApply = true
-			return
-		}
-	}
-}
-
-func (a *Alarm) Exist(desc string) bool {
-	desc = a.getOID(desc)
-	for _, alarm := range a.Alarms {
-		if alarm.Descr == desc {
-			return true
-		}
-	}
-	return false
-}
-
-func (a *Alarm) Apply() {
-	if !a.NeedApply {
-		return
-	}
-	a.NeedApply = false
-	a.Snmp.RemoveAllTable("upsAlarmId")
-	a.Snmp.RemoveAllTable("upsAlarmDescr")
-	a.Snmp.RemoveAllTable("upsAlarmTime")
-	size := len(a.Alarms)
-	a.Snmp.Data.Alarm.Present = size
-
-	if size == 0 {
-		return
-	}
-
-	onGet := func(obj any, index int) (any, error) {
-		if index >= size {
-			return nil, nil
-		}
-		switch obj.(string) {
-		case "upsAlarmId":
-			return a.Alarms[index].Index, nil
-		case "upsAlarmDescr":
-			return a.Alarms[index].Descr, nil
-		case "upsAlarmTime":
-			return a.Alarms[index].Time, nil
-		}
-		return nil, nil
-	}
-	a.Snmp.AddTable("upsAlarmId", "upsAlarmId", size, gosnmp.Integer, onGet)
-	a.Snmp.AddTable("upsAlarmDescr", "upsAlarmDescr", size, gosnmp.ObjectIdentifier, onGet)
-	a.Snmp.AddTable("upsAlarmTime", "upsAlarmTime", size, gosnmp.TimeTicks, onGet)
-}
-
-func tty(snmp *SNMP, device Device) func(cmd string) {
-	mode := &serial.Mode{
-		BaudRate: 2400,
-		DataBits: 8,
-		Parity:   serial.NoParity,
-		StopBits: serial.OneStopBit,
-	}
-
-	Logger.Infof("Try open port: '%s'", config.COMPort)
-
-	s, err := serial.Open(config.COMPort, mode)
-	if err != nil {
-		Logger.Fatalf("Open port faild: %s", err.Error())
-	}
-
-	result := make([]byte, 0)
-	buf := make([]byte, 128)
-
-	send := func(cmd string) {
-		if cmd == "" {
-			return
-		}
-		_, err = s.Write([]byte(cmd + "\r"))
-		if err != nil {
-			Logger.Errorf("send err: %s", err.Error())
-		}
-	}
-
-	var wg sync.WaitGroup
-
-	// 定义一个函数来关闭COM端口
-	closeCOMPort := func() {
-		wg.Done()
-		Logger.Infof("Closing COM port...")
-		err := s.Close()
-		if err != nil {
-			Logger.Errorf("Failed to close COM port: %s", err.Error())
-		} else {
-			Logger.Infof("COM port closed successfully.")
-		}
-		snmp.Close()
-		wg.Wait()
-	}
-
-	wg.Add(1)
-	go func() {
-		defer closeCOMPort()
-		for {
-			select {
-			case <-sigs:
-				Logger.Infof("Received signal. Stopping send operation...")
-				return
-			default:
-				send(device.GetInfo)
-				send(device.GetRated)
-				send(device.GetManufacturer)
-				send(device.ExtraGetInfo)
-				send(device.ExtraGetError)
-				send(device.ExtraGetTPInfo)
-				send(device.ExtraGetRated)
-
-				time.Sleep(time.Second * 1)
-			}
-		}
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer closeCOMPort()
-		for {
-			select {
-			case <-sigs:
-				Logger.Infof("Received signal. Stopping read operation...")
-				return
-			default:
-				for {
-					n, err := s.Read(buf[0:])
-					if err != nil {
-						if err.Error() == "The handle is invalid." {
-							return
-						}
-						Logger.Errorf("read err: %s", err.Error())
-						break
-					}
-					if string(buf[0:n]) == "\r" {
-						break
-					}
-					result = append(result, buf[:n]...)
-				}
-				if len(result) == 0 {
-					continue
-				}
-				Logger.Debugf("tty recv: %s", string(result))
-				err = device.OnReceive(snmp, data, string(result))
-				if err != nil {
-					Logger.Errorf("OnReceive err: %s", err.Error())
-				}
-				result = result[:0]
-			}
-		}
-	}()
-
-	return send
-}
 
 type RunArgs struct {
 	COMPort string
@@ -281,6 +34,25 @@ type RunArgs struct {
 
 	LogLevel string
 }
+
+var data = &SNMPData{
+	Ident:   &SNMPDataIdent{},
+	Battery: &SNMPDataBattery{},
+	Input:   &SNMPDataInput{},
+	Output:  &SNMPDataOutput{},
+	Bypass:  &SNMPDataBypass{},
+	Alarm:   &SNMPDataAlarm{},
+	Test:    &SNMPDataTest{},
+	Control: &SNMPDataControl{},
+	Config:  &SNMPDataConfig{},
+}
+
+var alarm = Alarm{}
+
+var Logger *logrus.Logger
+var SNMPLogger *logrus.Logger
+
+var sigs chan os.Signal
 
 var config = RunArgs{}
 
@@ -326,44 +98,6 @@ func argsParse() {
 	}
 }
 
-func getAuthProto(proto string) gosnmp.SnmpV3AuthProtocol {
-	switch proto {
-	case "MD5":
-		return gosnmp.MD5
-	case "SHA":
-		return gosnmp.SHA
-	case "SHA224":
-		return gosnmp.SHA224
-	case "SHA256":
-		return gosnmp.SHA256
-	case "SHA384":
-		return gosnmp.SHA384
-	case "SHA512":
-		return gosnmp.SHA512
-	}
-	return gosnmp.NoAuth
-}
-
-func getPrivProto(proto string) gosnmp.SnmpV3PrivProtocol {
-	switch proto {
-	case "DES":
-		return gosnmp.DES
-	case "AES":
-		return gosnmp.AES
-	case "AES192":
-		return gosnmp.AES192
-	case "AES192C":
-		return gosnmp.AES192C
-	case "AES256":
-		return gosnmp.AES256
-	case "AES256C":
-		return gosnmp.AES256C
-	}
-	return gosnmp.NoPriv
-}
-
-var sigs chan os.Signal
-
 func main() {
 	sigs = make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
@@ -387,6 +121,15 @@ func main() {
 		}
 	}
 
+	serial, err := serialInit(TTYConfig{
+		Port:     config.COMPort,
+		Received: serialReceived,
+	})
+	if err != nil {
+		Logger.Fatalf("Init serail faild: %s", err.Error())
+		return
+	}
+
 	device := Mt1000Pro
 
 	snmp := snmp_server(SNMPConfig{
@@ -402,11 +145,44 @@ func main() {
 
 		Logger: GoSNMPServer.WrapLogrus(SNMPLogger),
 	}, device.EnableService, data)
-	snmp.TtySend = tty(snmp, device)
-	snmp.Device = device
+	snmp.SetDevice(device)
+	snmp.SetSerialSend(createSerialSend(serial))
+
+	alarm.SetSNMP(snmp)
+
 	device.InitCallback(snmp, data)
 
-	alarm.Snmp = snmp
+	serial.SetUserData(snmp)
+
+	go func() {
+		for {
+			select {
+			case <-sigs:
+				Logger.Infof("Received signal. Stopping send operation...")
+				return
+			default:
+				serial.Send(device.GetInfo)
+				serial.Send(device.GetRated)
+				serial.Send(device.GetManufacturer)
+				serial.Send(device.ExtraGetInfo)
+				serial.Send(device.ExtraGetError)
+				serial.Send(device.ExtraGetTPInfo)
+				serial.Send(device.ExtraGetRated)
+
+				time.Sleep(time.Second * 1)
+			}
+		}
+	}()
+
+	go func() {
+		<-sigs
+		Logger.Info("Received signal. Stopping...")
+		err := serial.Close()
+		if err != nil {
+			Logger.Fatalf("Serial close faild: %s", err.Error())
+		}
+		snmp.Close()
+	}()
 
 	// snmp.AddPublicOID(&GoSNMPServer.PDUValueControlItem{
 	// 	OID:  ".1.3.6.1.2.1.1.1.0",
@@ -471,6 +247,11 @@ func main() {
 	// 		}
 	// 	}
 	// }
+}
+
+func init() {
+	Logger = newLog("app")
+	SNMPLogger = newLog("snmp")
 }
 
 func newLog(name string) *logrus.Logger {
