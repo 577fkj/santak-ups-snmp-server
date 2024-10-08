@@ -40,8 +40,9 @@ type Device struct {
 }
 
 type Mt1000ProUserData struct {
-	Rating    RatingInfo
-	InputInfo struct {
+	Rating        RatingInfo
+	BatterySecond int
+	InputInfo     struct {
 		Voltage   float32
 		Current   float32
 		Frequency float32
@@ -65,7 +66,7 @@ func Mt1000ProOnReceive(snmp *SNMP, data *SNMPData, value string) error {
 
 	switch v := parse.(type) {
 	case QueryResult:
-		// log.Infof("QueryResult: %#v", v)
+		log.Debugf("QueryResult: %#v", v)
 		// Battery
 		data.Battery.Voltage = int(v.BatteryVoltage)
 		rating := userData.Rating
@@ -101,12 +102,18 @@ func Mt1000ProOnReceive(snmp *SNMP, data *SNMPData, value string) error {
 			data.Battery.Minutes = 60 // 如果没有电流，无法计算放电时间
 		}
 
+		if data.Battery.Minutes > 60 {
+			data.Battery.Minutes = 60
+		}
+
 		// Output
 		data.Output.Freq = int(v.IPFreq)
 		if v.Status.UtilityFail {
 			data.Output.Source = 5
 
 			data.Input.LineBads = 1
+
+			userData.BatterySecond += 1
 
 			if !alarm.Exist("upsAlarmInputBad") {
 				alarm.Add("upsAlarmInputBad")
@@ -115,6 +122,8 @@ func Mt1000ProOnReceive(snmp *SNMP, data *SNMPData, value string) error {
 			data.Output.Source = 3
 
 			data.Input.LineBads = 0
+
+			userData.BatterySecond = 0
 
 			alarm.RemoveWithDesc("upsAlarmInputBad")
 		}
@@ -161,13 +170,19 @@ func Mt1000ProOnReceive(snmp *SNMP, data *SNMPData, value string) error {
 			alarm.RemoveWithDesc("upsAlarmOutputOverload")
 		}
 
+		if v.Status.BuzzerActive {
+			if config.DisableBuzz {
+				snmp.TtySend(snmp.Device.SwitchBuzz)
+			}
+		}
+
 		alarm.Apply()
 	case RatingInfo:
-		// log.Infof("RatingInfo: %#v", v)
+		log.Debugf("RatingInfo: %#v", v)
 
 		userData.Rating = v
 	default:
-		log.Infof("default: %#v", v)
+		log.Debugf("default: %#v", v)
 	}
 
 	return nil
@@ -258,8 +273,8 @@ var Mt1000Pro = Device{
 			AgentVersion:    "1",
 		},
 		Battery: &SNMPDataBattery{
-			Status: 1,
-			// Seconds: 1,
+			Status:  1,
+			Seconds: 1,
 			Minutes: 1,
 			Charge:  1,
 			Voltage: 1,

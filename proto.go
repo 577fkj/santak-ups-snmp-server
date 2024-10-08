@@ -168,6 +168,9 @@ func parseFloat(s string) float32 {
 }
 
 func ProtoParse(data string) any {
+	if len(data) == 0 {
+		return nil
+	}
 	startByte := data[0]
 	data = data[1:]
 	switch startByte {

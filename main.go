@@ -10,9 +10,19 @@ import (
 	"github.com/apex/log/handlers/cli"
 	"github.com/apex/log/handlers/multi"
 	"github.com/gosnmp/gosnmp"
+	"github.com/sirupsen/logrus"
+	"github.com/slayercat/GoSNMPServer"
 	"github.com/spf13/pflag"
-	"github.com/tarm/serial"
+	"go.bug.st/serial"
+	"go.bug.st/serial/enumerator"
 )
+
+type Alarm struct {
+	Alarms []AlarmEntry
+	Snmp   *SNMP
+
+	NeedApply bool
+}
 
 func init() {
 	initLog()
@@ -34,13 +44,6 @@ var data = &SNMPData{
 	Test:    &SNMPDataTest{},
 	Control: &SNMPDataControl{},
 	Config:  &SNMPDataConfig{},
-}
-
-type Alarm struct {
-	Alarms []AlarmEntry
-	Snmp   *SNMP
-
-	NeedApply bool
 }
 
 var alarm = Alarm{}
@@ -87,7 +90,7 @@ func (a *Alarm) getOID(desc string) string {
 	}
 	oid := a.Snmp.GetOID(desc, -1)
 	if oid == "" {
-		fmt.Printf("upsAlarmDescr: %s not found\n", desc)
+		log.Errorf("upsAlarmDescr: %s not found\n", desc)
 		return ""
 	}
 	return oid
@@ -149,12 +152,16 @@ func (a *Alarm) Apply() {
 }
 
 func tty(snmp *SNMP, device Device) func(cmd string) {
-
-	c := &serial.Config{Name: config.COMPort, Baud: 2400, ReadTimeout: time.Millisecond * 500}
+	mode := &serial.Mode{
+		BaudRate: 2400,
+		DataBits: 8,
+		Parity:   serial.NoParity,
+		StopBits: serial.OneStopBit,
+	}
 
 	log.Infof("try open port: %s\n", config.COMPort)
 
-	s, err := serial.OpenPort(c)
+	s, err := serial.Open(config.COMPort, mode)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -199,6 +206,10 @@ func tty(snmp *SNMP, device Device) func(cmd string) {
 				}
 				result = append(result, buf[:n]...)
 			}
+			if len(result) == 0 {
+				continue
+			}
+			log.Debugf("tty recv: %s\n", string(result))
 			err = device.OnReceive(snmp, data, string(result))
 			if err != nil {
 				log.Errorf("OnReceive err: %s", err.Error())
@@ -223,6 +234,10 @@ type RunArgs struct {
 	AuthPass    string
 	AuthProto   string
 	PrivProto   string
+
+	DisableBuzz bool
+
+	LogLevel string
 }
 
 var config = RunArgs{}
@@ -240,10 +255,31 @@ func argsParse() {
 	pflag.StringVarP(&config.AuthProto, "authproto", "t", "MD5", "SNMPv3 认证协议 [MD5, SHA, SHA224, SHA256, SHA384, SHA512] (可选)")
 	pflag.StringVarP(&config.PrivProto, "privproto", "i", "DES", "SNMPv3 加密协议 [DES, AES, AES192, AES192C, AES256, AES256C] (可选)")
 
+	pflag.BoolVarP(&config.DisableBuzz, "disable-buzz", "b", false, "禁用蜂鸣器 (可选)")
+
+	pflag.StringVarP(&config.LogLevel, "log", "l", "info", "日志级别 [trace, debug, info, warn, error, fatal] (可选)")
+
 	pflag.Parse()
 
 	if config.COMPort == "" {
 		pflag.Usage()
+
+		ports, err := enumerator.GetDetailedPortsList()
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+		if len(ports) == 0 {
+			fmt.Println("No serial ports found!")
+			return
+		}
+		for _, port := range ports {
+			fmt.Printf("Found port: %s\n", port.Name)
+			if port.IsUSB {
+				fmt.Printf("   USB ID     %s:%s\n", port.VID, port.PID)
+				fmt.Printf("   USB serial %s\n", port.SerialNumber)
+			}
+		}
+
 		os.Exit(1)
 	}
 }
@@ -286,6 +322,11 @@ func getPrivProto(proto string) gosnmp.SnmpV3PrivProtocol {
 
 func main() {
 	argsParse()
+	lvl := config.LogLevel
+	if lvl == "trace" {
+		lvl = "debug"
+	}
+	log.SetLevel(log.MustParseLevel(lvl))
 
 	var auth SNMPAuth
 	if config.Username != "" && config.AuthPass != "" && config.PrivPass != "" {
@@ -300,6 +341,10 @@ func main() {
 
 	device := Mt1000Pro
 
+	logger := logrus.New()
+	logger.Out = os.Stdout
+	logger.Level, _ = logrus.ParseLevel(config.LogLevel)
+
 	snmp := snmp_server(SNMPConfig{
 		PublicName:  config.PublicName,
 		PrivateName: config.PrivateName,
@@ -310,6 +355,8 @@ func main() {
 		Auth: &auth,
 
 		SetCallback: device.SetCallback,
+
+		Logger: GoSNMPServer.WrapLogrus(logger),
 	}, device.EnableService, data)
 	snmp.TtySend = tty(snmp, device)
 	snmp.Device = device

@@ -1,14 +1,14 @@
-module github.com/ttys3/santak-ups-monitor
+module github.com/577fkj/santak-ups-snmp-server
 
 go 1.18
 
 require (
 	github.com/apex/log v1.9.0
-	github.com/tarm/serial v0.0.0-20180830185346-98f6abe2eb07
 )
 
 require (
 	github.com/alecthomas/participle v0.4.1 // indirect
+	github.com/creack/goselect v0.1.2 // indirect
 	github.com/fatih/color v1.7.0 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/gosnmp/gosnmp v1.36.2-0.20231009064202-d306ed5aa998 // indirect
@@ -29,5 +29,6 @@ require (
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.3 // indirect
+	go.bug.st/serial v1.6.2 // indirect
 	golang.org/x/sys v0.15.0 // indirect
 )

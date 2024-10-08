@@ -2,11 +2,12 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
+
+	"github.com/apex/log"
 
 	"github.com/gosnmp/gosnmp"
 	"github.com/hallidave/mibtool/smi"
@@ -161,6 +162,29 @@ type SNMP struct {
 	Mib     *smi.MIB
 }
 
+type SNMPAuth struct {
+	Username string
+	AuthKey  string
+	PrivKey  string
+
+	AuthProto gosnmp.SnmpV3AuthProtocol
+	PrivProto gosnmp.SnmpV3PrivProtocol
+}
+
+type SNMPConfig struct {
+	Address string
+	Port    int
+
+	Logger GoSNMPServer.ILogger
+
+	PublicName  string
+	PrivateName string
+
+	Auth *SNMPAuth
+
+	SetCallback func(snmp *SNMP, name string, value interface{}) error
+}
+
 func getTypeName(t reflect.Type) string {
 	fullName := t.String()
 	lastDot := strings.LastIndex(fullName, ".")
@@ -222,40 +246,17 @@ func getFieldInfoFromType(t reflect.Type) []SNMPFieldInfo {
 	return fieldInfos
 }
 
-type SNMPAuth struct {
-	Username string
-	AuthKey  string
-	PrivKey  string
-
-	AuthProto gosnmp.SnmpV3AuthProtocol
-	PrivProto gosnmp.SnmpV3PrivProtocol
-}
-
-type SNMPConfig struct {
-	Address string
-	Port    int
-
-	Logger GoSNMPServer.ILogger
-
-	PublicName  string
-	PrivateName string
-
-	Auth *SNMPAuth
-
-	SetCallback func(snmp *SNMP, name string, value interface{}) error
-}
-
 func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNMP {
 	path, err := os.Getwd()
 	if err != nil {
-		fmt.Println(err.Error())
+		log.Fatal(err.Error())
 		return nil
 	}
 
 	mib := smi.NewMIB(filepath.Join(path, "mibs"))
 	err = mib.LoadModules("UPS-MIB")
 	if err != nil {
-		fmt.Println(err.Error())
+		log.Fatal(err.Error())
 		return nil
 	}
 
@@ -326,7 +327,6 @@ func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNM
 		case "TimesTamp":
 			tp = gosnmp.TimeTicks
 		default:
-			fmt.Println("unsupported type:", type_name)
 			currentData = reflect.ValueOf(data).Elem().FieldByName(name).Interface()
 			currentEnableObj := reflect.ValueOf(server_enable).FieldByName(name)
 			if currentEnableObj.Kind() == reflect.Ptr {
@@ -341,13 +341,13 @@ func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNM
 		}
 
 		if !enableField.IsValid() || enableField.IsZero() {
-			fmt.Printf("Skip service [%s](%s) %s\n", name, m_id, oid.String())
+			log.Infof("Skip service [%s](%s) %s\n", name, m_id, oid.String())
 			continue
 		}
 
 		oid_str := fmt.Sprintf(".%s.0", oid.String())
 
-		fmt.Printf("Add service [%s](%s) %s\n", name, m_id, oid_str)
+		log.Infof("Add service [%s](%s) %s\n", name, m_id, oid_str)
 
 		if !id.Writable {
 			onSet := func(value interface{}) error {
@@ -370,11 +370,11 @@ func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNM
 			OID:  oid_str,
 			Type: tp,
 			OnGet: func() (interface{}, error) {
-				fmt.Println("Get:", name)
+				log.Debugf("Get: %s", name)
 				if !field.IsValid() {
 					return nil, fmt.Errorf("field not found")
 				}
-				fmt.Println("Get data:", field.Interface())
+				log.Debugf("Get data: %s", field.Interface())
 				return field.Interface(), nil
 			},
 		})
@@ -417,7 +417,7 @@ func (s *SNMP) Close() {
 // 启动 SNMP 服务器。
 func (s *SNMP) Run() {
 	listen := fmt.Sprintf("%s:%d", s.Config.Address, s.Config.Port)
-	log.Printf("SNMP server is running on %s\n", listen)
+	log.Infof("SNMP server is running on %s\n", listen)
 	s.Server.ServeForever()
 }
 
