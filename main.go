@@ -3,13 +3,13 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/apex/log"
-	"github.com/apex/log/handlers/cli"
-	"github.com/apex/log/handlers/multi"
 	"github.com/gosnmp/gosnmp"
+	rotatelogs "github.com/lestrrat-go/file-rotatelogs"
+	"github.com/rifflock/lfshook"
 	"github.com/sirupsen/logrus"
 	"github.com/slayercat/GoSNMPServer"
 	"github.com/spf13/pflag"
@@ -48,20 +48,22 @@ var data = &SNMPData{
 
 var alarm = Alarm{}
 
-func (a *Alarm) Add(descr string) int {
-	if !strings.HasPrefix(descr, ".") {
-		oid := a.Snmp.GetOID(descr, -1)
+var Logger *logrus.Logger
+
+func (a *Alarm) Add(desc string) int {
+	if !strings.HasPrefix(desc, ".") {
+		oid := a.Snmp.GetOID(desc, -1)
 		if oid == "" {
-			fmt.Printf("upsAlarmDescr: %s not found\n", descr)
-			panic("upsAlarmDescr not found")
+			fmt.Printf("%s not found", desc)
+			panic(desc + " not found")
 		}
-		descr = oid
+		desc = oid
 	}
 
 	index := len(a.Alarms)
 	a.AddAlarmEntry(AlarmEntry{
 		Index: index,
-		Descr: descr,
+		Descr: desc,
 		Time:  TimesTamp(getRunningTimeInSeconds()),
 	})
 	return index
@@ -90,7 +92,7 @@ func (a *Alarm) getOID(desc string) string {
 	}
 	oid := a.Snmp.GetOID(desc, -1)
 	if oid == "" {
-		log.Errorf("upsAlarmDescr: %s not found\n", desc)
+		Logger.Errorf("%s not found", desc)
 		return ""
 	}
 	return oid
@@ -159,11 +161,11 @@ func tty(snmp *SNMP, device Device) func(cmd string) {
 		StopBits: serial.OneStopBit,
 	}
 
-	log.Infof("try open port: %s\n", config.COMPort)
+	Logger.Infof("try open port: %s", config.COMPort)
 
 	s, err := serial.Open(config.COMPort, mode)
 	if err != nil {
-		log.Fatal(err.Error())
+		Logger.Fatal(err.Error())
 	}
 
 	result := make([]byte, 0)
@@ -175,7 +177,7 @@ func tty(snmp *SNMP, device Device) func(cmd string) {
 		}
 		_, err = s.Write([]byte(cmd + "\r"))
 		if err != nil {
-			log.Errorf("send err: %s", err.Error())
+			Logger.Errorf("send err: %s", err.Error())
 		}
 	}
 
@@ -198,7 +200,7 @@ func tty(snmp *SNMP, device Device) func(cmd string) {
 			for {
 				n, err := s.Read(buf[0:])
 				if err != nil {
-					log.Errorf("read err: %s", err.Error())
+					Logger.Errorf("read err: %s", err.Error())
 					break
 				}
 				if string(buf[0:n]) == "\r" {
@@ -209,10 +211,10 @@ func tty(snmp *SNMP, device Device) func(cmd string) {
 			if len(result) == 0 {
 				continue
 			}
-			log.Debugf("tty recv: %s\n", string(result))
+			Logger.Debugf("tty recv: %s", string(result))
 			err = device.OnReceive(snmp, data, string(result))
 			if err != nil {
-				log.Errorf("OnReceive err: %s", err.Error())
+				Logger.Errorf("OnReceive err: %s", err.Error())
 			}
 			result = result[:0]
 		}
@@ -266,7 +268,7 @@ func argsParse() {
 
 		ports, err := enumerator.GetDetailedPortsList()
 		if err != nil {
-			log.Fatal(err.Error())
+			Logger.Fatal(err.Error())
 		}
 		if len(ports) == 0 {
 			fmt.Println("No serial ports found!")
@@ -322,11 +324,11 @@ func getPrivProto(proto string) gosnmp.SnmpV3PrivProtocol {
 
 func main() {
 	argsParse()
-	lvl := config.LogLevel
-	if lvl == "trace" {
-		lvl = "debug"
+	lvl, err := logrus.ParseLevel(config.LogLevel)
+	if err != nil {
+		panic("Log level error: " + err.Error())
 	}
-	log.SetLevel(log.MustParseLevel(lvl))
+	Logger.SetLevel(lvl)
 
 	var auth SNMPAuth
 	if config.Username != "" && config.AuthPass != "" && config.PrivPass != "" {
@@ -341,10 +343,6 @@ func main() {
 
 	device := Mt1000Pro
 
-	logger := logrus.New()
-	logger.Out = os.Stdout
-	logger.Level, _ = logrus.ParseLevel(config.LogLevel)
-
 	snmp := snmp_server(SNMPConfig{
 		PublicName:  config.PublicName,
 		PrivateName: config.PrivateName,
@@ -356,7 +354,7 @@ func main() {
 
 		SetCallback: device.SetCallback,
 
-		Logger: GoSNMPServer.WrapLogrus(logger),
+		Logger: GoSNMPServer.WrapLogrus(Logger),
 	}, device.EnableService, data)
 	snmp.TtySend = tty(snmp, device)
 	snmp.Device = device
@@ -372,7 +370,6 @@ func main() {
 	// 	},
 	// })
 
-	// // http://oid-info.com/get/1.3.6.1.4.1.3941
 	// snmp.AddPublicOID(&GoSNMPServer.PDUValueControlItem{
 	// 	OID:  ".1.3.6.1.2.1.1.2.0",
 	// 	Type: gosnmp.ObjectIdentifier,
@@ -431,9 +428,50 @@ func main() {
 }
 
 func initLog() {
-	// default handler: text
-	var logHandlers []log.Handler
-	// only print to console when debug
-	logHandlers = append(logHandlers, cli.New(os.Stdout))
-	log.SetHandler(multi.New(logHandlers...))
+	// 创建一个 writer
+	logWriter, err := rotatelogs.New(
+		filepath.Join("logs", "syslog_%Y%m%d%H%M%S.log"), //日志路径
+		rotatelogs.WithLinkName(filepath.Join("logs", "syslog.log")),
+		rotatelogs.WithMaxAge(7*24*time.Hour),       // 最大保留天数：7天
+		rotatelogs.WithRotationTime(10*time.Second), // 日志分割时间：10s
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	// 创建一个 Error 级别的 writer
+	errorWriter, err := rotatelogs.New(
+		filepath.Join("logs", "sysError_%Y%m%d%H%M%S.log"), //日志路径
+		rotatelogs.WithLinkName(filepath.Join("logs", "sysError.log")),
+		rotatelogs.WithMaxAge(7*24*time.Hour),       // 最大保留天数：7天
+		rotatelogs.WithRotationTime(10*time.Second), // 日志分割时间：1分钟
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	// 新建Hook，按日志级别匹配 writer
+	hook := lfshook.NewHook(
+		lfshook.WriterMap{
+			logrus.DebugLevel: logWriter,
+			logrus.InfoLevel:  logWriter,
+			logrus.WarnLevel:  logWriter,
+			logrus.TraceLevel: logWriter,
+
+			logrus.ErrorLevel: errorWriter,
+			logrus.FatalLevel: errorWriter,
+			logrus.PanicLevel: errorWriter,
+		},
+		&logrus.TextFormatter{
+			FullTimestamp: true,
+			ForceColors:   true,
+		},
+	)
+
+	Logger = logrus.New()
+	Logger.SetFormatter(&logrus.TextFormatter{
+		FullTimestamp: true,
+		ForceColors:   true,
+	})
+	Logger.AddHook(hook)
 }

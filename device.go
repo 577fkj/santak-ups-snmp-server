@@ -2,9 +2,7 @@ package main
 
 import (
 	"errors"
-	"fmt"
 
-	"github.com/apex/log"
 	"github.com/gosnmp/gosnmp"
 )
 
@@ -66,7 +64,7 @@ func Mt1000ProOnReceive(snmp *SNMP, data *SNMPData, value string) error {
 
 	switch v := parse.(type) {
 	case QueryResult:
-		log.Debugf("QueryResult: %#v", v)
+		Logger.Debugf("QueryResult: %#v", v)
 		// Battery
 		data.Battery.Voltage = int(v.BatteryVoltage)
 		rating := userData.Rating
@@ -178,11 +176,11 @@ func Mt1000ProOnReceive(snmp *SNMP, data *SNMPData, value string) error {
 
 		alarm.Apply()
 	case RatingInfo:
-		log.Debugf("RatingInfo: %#v", v)
+		Logger.Debugf("RatingInfo: %#v", v)
 
 		userData.Rating = v
 	default:
-		log.Debugf("default: %#v", v)
+		Logger.Debugf("Default: %#v", v)
 	}
 
 	return nil
@@ -246,7 +244,7 @@ func Mt1000ProInit(snmp *SNMP, data *SNMPData) error {
 
 func Mt1000ProSetCallback(snmp *SNMP, name string, value any) error {
 	data := snmp.Data
-	fmt.Printf("SetCallback: %s, %v\n", name, value)
+	Logger.Debugf("SetCallback: %s=%v", name, value)
 	switch name {
 	case "upsConfigAudibleStatus":
 		if value == 1 || value == 3 {

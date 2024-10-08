@@ -1,0 +1,12 @@
+[Unit]
+Description=UPS SNMP Server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/root/ups/santak-ups-snmp-server -c /dev/ttyUSB0 -b
+User=root
+WorkingDirectory=/root/ups
+
+[Install]
+WantedBy=multi-user.target

@@ -7,8 +7,6 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/apex/log"
-
 	"github.com/gosnmp/gosnmp"
 	"github.com/hallidave/mibtool/smi"
 	"github.com/slayercat/GoSNMPServer"
@@ -249,14 +247,14 @@ func getFieldInfoFromType(t reflect.Type) []SNMPFieldInfo {
 func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNMP {
 	path, err := os.Getwd()
 	if err != nil {
-		log.Fatal(err.Error())
+		Logger.Fatalf("Get path faild: %s", err.Error())
 		return nil
 	}
 
 	mib := smi.NewMIB(filepath.Join(path, "mibs"))
 	err = mib.LoadModules("UPS-MIB")
 	if err != nil {
-		log.Fatal(err.Error())
+		Logger.Fatalf("Get MIB faild: %s", err.Error())
 		return nil
 	}
 
@@ -341,13 +339,13 @@ func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNM
 		}
 
 		if !enableField.IsValid() || enableField.IsZero() {
-			log.Infof("Skip service [%s](%s) %s\n", name, m_id, oid.String())
+			Logger.Debugf("Skip service [%s](%s) %s", name, m_id, oid.String())
 			continue
 		}
 
 		oid_str := fmt.Sprintf(".%s.0", oid.String())
 
-		log.Infof("Add service [%s](%s) %s\n", name, m_id, oid_str)
+		Logger.Infof("Add service [%s](%s) %s", name, m_id, oid_str)
 
 		if !id.Writable {
 			onSet := func(value interface{}) error {
@@ -370,11 +368,11 @@ func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNM
 			OID:  oid_str,
 			Type: tp,
 			OnGet: func() (interface{}, error) {
-				log.Debugf("Get: %s", name)
+				Logger.Debugf("Get: %s", name)
 				if !field.IsValid() {
 					return nil, fmt.Errorf("field not found")
 				}
-				log.Debugf("Get data: %s", field.Interface())
+				Logger.Debugf("Get data: %s", field.Interface())
 				return field.Interface(), nil
 			},
 		})
@@ -398,7 +396,7 @@ func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNM
 	server := GoSNMPServer.NewSNMPServer(master)
 	err = server.ListenUDP("udp", listen)
 	if err != nil {
-		log.Fatalf("Error in listen: %+v", err)
+		Logger.Fatalf("Error in listen: %+v", err)
 	}
 
 	snmp.Server = server
@@ -417,7 +415,7 @@ func (s *SNMP) Close() {
 // 启动 SNMP 服务器。
 func (s *SNMP) Run() {
 	listen := fmt.Sprintf("%s:%d", s.Config.Address, s.Config.Port)
-	log.Infof("SNMP server is running on %s\n", listen)
+	Logger.Infof("SNMP server is running on %s", listen)
 	s.Server.ServeForever()
 }
 

@@ -1,10 +1,8 @@
 module github.com/577fkj/santak-ups-snmp-server
 
-go 1.18
+go 1.21
 
-require (
-	github.com/apex/log v1.9.0
-)
+toolchain go1.22.1
 
 require (
 	github.com/alecthomas/participle v0.4.1 // indirect
@@ -14,11 +12,14 @@ require (
 	github.com/gosnmp/gosnmp v1.36.2-0.20231009064202-d306ed5aa998 // indirect
 	github.com/hallidave/mibtool v0.2.0 // indirect
 	github.com/konsorten/go-windows-terminal-sequences v1.0.1 // indirect
+	github.com/lestrrat-go/file-rotatelogs v2.4.0+incompatible // indirect
+	github.com/lestrrat-go/strftime v1.1.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/mattn/go-colorable v0.1.2 // indirect
 	github.com/mattn/go-isatty v0.0.8 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
+	github.com/rifflock/lfshook v0.0.0-20180920164130-b9218ef580f5 // indirect
 	github.com/shirou/gopsutil/v3 v3.23.11 // indirect
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect
 	github.com/sirupsen/logrus v1.4.2 // indirect
