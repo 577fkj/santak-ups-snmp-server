@@ -245,23 +245,10 @@ func getFieldInfoFromType(t reflect.Type) []SNMPFieldInfo {
 }
 
 func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNMP {
-	path, err := os.Getwd()
-	if err != nil {
-		Logger.Fatalf("Get path faild: %s", err.Error())
-		return nil
-	}
-
-	mib := smi.NewMIB(filepath.Join(path, "mibs"))
-	err = mib.LoadModules("UPS-MIB")
-	if err != nil {
-		Logger.Fatalf("Get MIB faild: %s", err.Error())
-		return nil
-	}
 
 	snmp := &SNMP{
 		Data:   data,
 		Config: &config,
-		Mib:    mib,
 	}
 
 	public := GoSNMPServer.SubAgent{
@@ -285,6 +272,21 @@ func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNM
 	} else {
 		master.Logger = GoSNMPServer.NewDefaultLogger()
 	}
+
+	path, err := os.Getwd()
+	if err != nil {
+		master.Logger.Fatalf("Get path faild: %s", err.Error())
+		return nil
+	}
+
+	mib := smi.NewMIB(filepath.Join(path, "mibs"))
+	err = mib.LoadModules("UPS-MIB")
+	if err != nil {
+		master.Logger.Fatalf("Get MIB faild: %s", err.Error())
+		return nil
+	}
+
+	snmp.Mib = mib
 
 	ids := getFieldInfoFromType(reflect.TypeOf(SNMPData{}))
 	var currentData any
@@ -339,13 +341,13 @@ func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNM
 		}
 
 		if !enableField.IsValid() || enableField.IsZero() {
-			Logger.Debugf("Skip service [%s](%s) %s", name, m_id, oid.String())
+			master.Logger.Debugf("Skip service [%s](%s) %s", name, m_id, oid.String())
 			continue
 		}
 
 		oid_str := fmt.Sprintf(".%s.0", oid.String())
 
-		Logger.Infof("Add service [%s](%s) %s", name, m_id, oid_str)
+		master.Logger.Infof("Add service [%s](%s) %s", name, m_id, oid_str)
 
 		if !id.Writable {
 			onSet := func(value interface{}) error {
@@ -368,11 +370,11 @@ func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNM
 			OID:  oid_str,
 			Type: tp,
 			OnGet: func() (interface{}, error) {
-				Logger.Debugf("Get: %s", name)
+				master.Logger.Debugf("Get: %s", name)
 				if !field.IsValid() {
 					return nil, fmt.Errorf("field not found")
 				}
-				Logger.Debugf("Get data: %s", field.Interface())
+				master.Logger.Debugf("Get data: %s", field.Interface())
 				return field.Interface(), nil
 			},
 		})
@@ -396,7 +398,7 @@ func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNM
 	server := GoSNMPServer.NewSNMPServer(master)
 	err = server.ListenUDP("udp", listen)
 	if err != nil {
-		Logger.Fatalf("Error in listen: %+v", err)
+		master.Logger.Fatalf("Error in listen: %+v", err)
 	}
 
 	snmp.Server = server
@@ -415,7 +417,7 @@ func (s *SNMP) Close() {
 // 启动 SNMP 服务器。
 func (s *SNMP) Run() {
 	listen := fmt.Sprintf("%s:%d", s.Config.Address, s.Config.Port)
-	Logger.Infof("SNMP server is running on %s", listen)
+	s.Master.Logger.Infof("SNMP server is running on %s", listen)
 	s.Server.ServeForever()
 }
 

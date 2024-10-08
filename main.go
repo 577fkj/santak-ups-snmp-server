@@ -25,7 +25,8 @@ type Alarm struct {
 }
 
 func init() {
-	initLog()
+	Logger = newLog("app")
+	SNMPLogger = newLog("snmp")
 }
 
 var startTime = time.Now()
@@ -49,6 +50,7 @@ var data = &SNMPData{
 var alarm = Alarm{}
 
 var Logger *logrus.Logger
+var SNMPLogger *logrus.Logger
 
 func (a *Alarm) Add(desc string) int {
 	if !strings.HasPrefix(desc, ".") {
@@ -329,6 +331,7 @@ func main() {
 		panic("Log level error: " + err.Error())
 	}
 	Logger.SetLevel(lvl)
+	SNMPLogger.SetLevel(lvl)
 
 	var auth SNMPAuth
 	if config.Username != "" && config.AuthPass != "" && config.PrivPass != "" {
@@ -354,7 +357,7 @@ func main() {
 
 		SetCallback: device.SetCallback,
 
-		Logger: GoSNMPServer.WrapLogrus(Logger),
+		Logger: GoSNMPServer.WrapLogrus(SNMPLogger),
 	}, device.EnableService, data)
 	snmp.TtySend = tty(snmp, device)
 	snmp.Device = device
@@ -427,13 +430,13 @@ func main() {
 	// }
 }
 
-func initLog() {
+func newLog(name string) *logrus.Logger {
 	// 创建一个 writer
 	logWriter, err := rotatelogs.New(
-		filepath.Join("logs", "syslog_%Y%m%d%H%M%S.log"), //日志路径
-		rotatelogs.WithLinkName(filepath.Join("logs", "syslog.log")),
-		rotatelogs.WithMaxAge(7*24*time.Hour),       // 最大保留天数：7天
-		rotatelogs.WithRotationTime(10*time.Second), // 日志分割时间：10s
+		filepath.Join("logs", name+"Log_%Y-%m-%d.log"), //日志路径
+		rotatelogs.WithLinkName(filepath.Join("logs", name+"Log.log")),
+		rotatelogs.WithRotationTime(24*time.Hour), // 每 24 小时轮转一次
+		rotatelogs.WithRotationSize(10*1024*1024), // 当日志文件超过 10MB 时轮转
 	)
 	if err != nil {
 		panic(err)
@@ -441,10 +444,10 @@ func initLog() {
 
 	// 创建一个 Error 级别的 writer
 	errorWriter, err := rotatelogs.New(
-		filepath.Join("logs", "sysError_%Y%m%d%H%M%S.log"), //日志路径
-		rotatelogs.WithLinkName(filepath.Join("logs", "sysError.log")),
-		rotatelogs.WithMaxAge(7*24*time.Hour),       // 最大保留天数：7天
-		rotatelogs.WithRotationTime(10*time.Second), // 日志分割时间：1分钟
+		filepath.Join("logs", name+"Error_%Y-%m-%d.log"), //日志路径
+		rotatelogs.WithLinkName(filepath.Join("logs", name+"Error.log")),
+		rotatelogs.WithRotationTime(24*time.Hour), // 每 24 小时轮转一次
+		rotatelogs.WithRotationSize(10*1024*1024), // 当日志文件超过 10MB 时轮转
 	)
 	if err != nil {
 		panic(err)
@@ -468,10 +471,11 @@ func initLog() {
 		},
 	)
 
-	Logger = logrus.New()
-	Logger.SetFormatter(&logrus.TextFormatter{
+	logger := logrus.New()
+	logger.SetFormatter(&logrus.TextFormatter{
 		FullTimestamp: true,
 		ForceColors:   true,
 	})
-	Logger.AddHook(hook)
+	logger.AddHook(hook)
+	return logger
 }
