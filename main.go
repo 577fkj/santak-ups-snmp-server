@@ -3,8 +3,11 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/gosnmp/gosnmp"
@@ -163,11 +166,11 @@ func tty(snmp *SNMP, device Device) func(cmd string) {
 		StopBits: serial.OneStopBit,
 	}
 
-	Logger.Infof("try open port: %s", config.COMPort)
+	Logger.Infof("Try open port: '%s'", config.COMPort)
 
 	s, err := serial.Open(config.COMPort, mode)
 	if err != nil {
-		Logger.Fatal(err.Error())
+		Logger.Fatalf("Open port faild: %s", err.Error())
 	}
 
 	result := make([]byte, 0)
@@ -183,42 +186,77 @@ func tty(snmp *SNMP, device Device) func(cmd string) {
 		}
 	}
 
-	go func() {
-		for {
-			send(device.GetInfo)
-			send(device.GetRated)
-			send(device.GetManufacturer)
-			send(device.ExtraGetInfo)
-			send(device.ExtraGetError)
-			send(device.ExtraGetTPInfo)
-			send(device.ExtraGetRated)
+	var wg sync.WaitGroup
 
-			time.Sleep(time.Second * 1)
+	// 定义一个函数来关闭COM端口
+	closeCOMPort := func() {
+		wg.Done()
+		Logger.Infof("Closing COM port...")
+		err := s.Close()
+		if err != nil {
+			Logger.Errorf("Failed to close COM port: %s", err.Error())
+		} else {
+			Logger.Infof("COM port closed successfully.")
+		}
+		snmp.Close()
+		wg.Wait()
+	}
+
+	wg.Add(1)
+	go func() {
+		defer closeCOMPort()
+		for {
+			select {
+			case <-sigs:
+				Logger.Infof("Received signal. Stopping send operation...")
+				return
+			default:
+				send(device.GetInfo)
+				send(device.GetRated)
+				send(device.GetManufacturer)
+				send(device.ExtraGetInfo)
+				send(device.ExtraGetError)
+				send(device.ExtraGetTPInfo)
+				send(device.ExtraGetRated)
+
+				time.Sleep(time.Second * 1)
+			}
 		}
 	}()
 
+	wg.Add(1)
 	go func() {
+		defer closeCOMPort()
 		for {
-			for {
-				n, err := s.Read(buf[0:])
+			select {
+			case <-sigs:
+				Logger.Infof("Received signal. Stopping read operation...")
+				return
+			default:
+				for {
+					n, err := s.Read(buf[0:])
+					if err != nil {
+						if err.Error() == "The handle is invalid." {
+							return
+						}
+						Logger.Errorf("read err: %s", err.Error())
+						break
+					}
+					if string(buf[0:n]) == "\r" {
+						break
+					}
+					result = append(result, buf[:n]...)
+				}
+				if len(result) == 0 {
+					continue
+				}
+				Logger.Debugf("tty recv: %s", string(result))
+				err = device.OnReceive(snmp, data, string(result))
 				if err != nil {
-					Logger.Errorf("read err: %s", err.Error())
-					break
+					Logger.Errorf("OnReceive err: %s", err.Error())
 				}
-				if string(buf[0:n]) == "\r" {
-					break
-				}
-				result = append(result, buf[:n]...)
+				result = result[:0]
 			}
-			if len(result) == 0 {
-				continue
-			}
-			Logger.Debugf("tty recv: %s", string(result))
-			err = device.OnReceive(snmp, data, string(result))
-			if err != nil {
-				Logger.Errorf("OnReceive err: %s", err.Error())
-			}
-			result = result[:0]
 		}
 	}()
 
@@ -324,7 +362,12 @@ func getPrivProto(proto string) gosnmp.SnmpV3PrivProtocol {
 	return gosnmp.NoPriv
 }
 
+var sigs chan os.Signal
+
 func main() {
+	sigs = make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
+
 	argsParse()
 	lvl, err := logrus.ParseLevel(config.LogLevel)
 	if err != nil {
