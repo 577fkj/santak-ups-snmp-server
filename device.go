@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"math"
 
 	"github.com/gosnmp/gosnmp"
 )
@@ -42,14 +43,14 @@ type Mt1000ProUserData struct {
 	BatterySecond int
 	InputInfo     struct {
 		Voltage   float32
-		Current   float32
+		Current   float64
 		Frequency float32
-		Power     float32
+		Power     float64
 	}
 	OutputInfo struct {
 		Voltage float32
-		Current float32
-		Power   float32
+		Current float64
+		Power   float64
 		Load    int
 	}
 }
@@ -66,10 +67,13 @@ func Mt1000ProOnReceive(snmp *SNMP, data *SNMPData, value string) error {
 	case QueryResult:
 		Logger.Debugf("QueryResult: %#v", v)
 		// Battery
-		data.Battery.Voltage = int(v.BatteryVoltage)
+		data.Battery.Voltage = int(math.Round(float64(v.BatteryVoltage)))
 		rating := userData.Rating
-		charge := (v.BatteryVoltage / rating.BatteryVoltage) * 100
-		data.Battery.Charge = int(charge)
+
+		batteryMax := 27.4
+		batteryLow := 21.6
+		charge := (float64(v.BatteryVoltage) - batteryLow) / (batteryMax - batteryLow) * 100
+		data.Battery.Charge = int(math.Round(charge))
 		if data.Battery.Charge > 100 {
 			data.Battery.Charge = 100
 		}
@@ -84,28 +88,42 @@ func Mt1000ProOnReceive(snmp *SNMP, data *SNMPData, value string) error {
 			data.Battery.Status = 2
 		}
 
-		data.Battery.Temp = int(v.Temperature)
+		data.Battery.Temp = int(math.Round(float64(v.Temperature)))
 
-		current := (float32(v.OPCurrentPercent) / 100) * float32(rating.CurrentRating)
-		data.Battery.Current = int(current)
+		// 电流 = (电流百分比 / 100) * 额定电流
+		current := (float64(v.OPCurrentPercent) / 100) * float64(rating.CurrentRating)
+		data.Battery.Current = int(math.Round(current))
 
-		// 计算剩余时间 (秒)
-		// 剩余容量 Ah = (Battery.Charge / 100) * 额定电池容量 (7)
-		// 放电时间 (小时) = 剩余容量 / 当前电流
-		if current > 0 { // 避免除以0
-			remainingCapacity := (charge / 100) * 7
-			dischargeTimeHours := remainingCapacity / current
-			data.Battery.Minutes = int(dischargeTimeHours * 60) // 转换为分钟
-		} else {
-			data.Battery.Minutes = 60 // 如果没有电流，无法计算放电时间
-		}
+		// // 计算剩余时间 (秒)
+		// // 剩余容量 Ah = (Battery.Charge / 100) * 额定电池容量 (7)
+		// // 放电时间 (小时) = 剩余容量 / 当前电流
+		// if current > 0 { // 避免除以0
+		// 	remainingCapacity := (charge / 100) * 7
+		// 	dischargeTimeHours := remainingCapacity / current
+		// 	data.Battery.Minutes = int(dischargeTimeHours * 60) // 转换为分钟
+		// } else {
+		// 	data.Battery.Minutes = 60 // 如果没有电流，无法计算放电时间
+		// }
 
-		if data.Battery.Minutes > 60 {
-			data.Battery.Minutes = 60
-		}
+		// if data.Battery.Minutes > 60 {
+		// 	data.Battery.Minutes = 60
+		// }
+
+		// MT1000-Pro
+		// 50%  负载 10  分钟
+		// 100% 负载 3.5 分钟
+		t50 := 10.0
+		t100 := 3.5
+
+		// 使用线性插值计算时间
+		time := t50 + (t100-t50)/(100.0-50.0)*(float64(v.OPCurrentPercent)-50.0)
+
+		data.Battery.Minutes = int(math.Round(time))
+
+		Logger.Debugf("Battery: %fV %f%% %dC %fA %fM", v.BatteryVoltage, charge, data.Battery.Temp, current, time)
 
 		// Output
-		data.Output.Freq = int(v.IPFreq)
+		data.Output.Freq = int(math.Round(float64(v.IPFreq)))
 		if v.Status.UtilityFail {
 			data.Output.Source = 5
 
@@ -127,14 +145,14 @@ func Mt1000ProOnReceive(snmp *SNMP, data *SNMPData, value string) error {
 		}
 		userData.OutputInfo.Voltage = v.OPVoltage
 		userData.OutputInfo.Current = current
-		userData.OutputInfo.Power = v.OPVoltage * current
+		userData.OutputInfo.Power = float64(v.OPVoltage) * current
 		userData.OutputInfo.Load = v.OPCurrentPercent
 
 		// Input
 		userData.InputInfo.Voltage = v.IPVoltage
-		userData.InputInfo.Current = current
+		userData.InputInfo.Current = float64(current)
 		userData.InputInfo.Frequency = v.IPFreq
-		userData.InputInfo.Power = v.OPVoltage * current
+		userData.InputInfo.Power = float64(v.OPVoltage) * current
 
 		// Config
 		if v.Status.BuzzerActive {

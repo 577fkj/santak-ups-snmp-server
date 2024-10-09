@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -182,6 +183,7 @@ func main() {
 			Logger.Fatalf("Serial close faild: %s", err.Error())
 		}
 		snmp.Close()
+		os.Exit(0)
 	}()
 
 	// snmp.AddPublicOID(&GoSNMPServer.PDUValueControlItem{
@@ -200,53 +202,57 @@ func main() {
 	// 	},
 	// })
 
-	snmp.Run()
+	// go runNCM()
 
+	snmp.Run()
+}
+
+func runNCM() {
 	// Santak NMC Card
 	// port 2993 Santak NMC
 	// port 4679 DELL
 	// req <SCAN_REQUEST/>
 	// rep <SCAN macAddress="00:1A:2B:3C:4D:5E"/>
-	// // 监听 UDP 地址和端口
-	// addr := net.UDPAddr{
-	// 	Port: 2993,                   // 设置服务器监听的端口
-	// 	IP:   net.ParseIP("0.0.0.0"), // 监听所有网络接口
-	// }
+	// 监听 UDP 地址和端口
+	addr := net.UDPAddr{
+		Port: 2993,                   // 设置服务器监听的端口
+		IP:   net.ParseIP("0.0.0.0"), // 监听所有网络接口
+	}
 
-	// // 创建 UDP 连接
-	// conn, err := net.ListenUDP("udp", &addr)
-	// if err != nil {
-	// 	fmt.Println("Error starting UDP server:", err)
-	// 	return
-	// }
-	// defer conn.Close()
-	// fmt.Println("UDP server is listening on port 2993...")
+	// 创建 UDP 连接
+	conn, err := net.ListenUDP("udp", &addr)
+	if err != nil {
+		fmt.Println("Error starting UDP server:", err)
+		return
+	}
+	defer conn.Close()
+	fmt.Println("UDP server is listening on port 2993...")
 
-	// // 缓冲区，用于存放接收到的数据
-	// buffer := make([]byte, 1024)
+	// 缓冲区，用于存放接收到的数据
+	buffer := make([]byte, 1024)
 
-	// // 循环读取来自客户端的消息
-	// for {
-	// 	// 读取 UDP 数据包
-	// 	n, clientAddr, err := conn.ReadFromUDP(buffer)
-	// 	if err != nil {
-	// 		fmt.Println("Error reading from UDP:", err)
-	// 		continue
-	// 	}
+	// 循环读取来自客户端的消息
+	for {
+		// 读取 UDP 数据包
+		n, clientAddr, err := conn.ReadFromUDP(buffer)
+		if err != nil {
+			fmt.Println("Error reading from UDP:", err)
+			continue
+		}
 
-	// 	// 输出接收到的消息
-	// 	fmt.Printf("Received message from %s: %s\n", clientAddr.String(), string(buffer[:n]))
+		// 输出接收到的消息
+		fmt.Printf("Received message from %s: %s\n", clientAddr.String(), string(buffer[:n]))
 
-	// 	if string(buffer[:n]) == "<SCAN_REQUEST/>" {
-	// 		// 发送消息给客户端
-	// 		response := []byte("<SCAN macAddress=\"00:1A:2B:3C:4D:5E\"/>")
-	// 		_, err = conn.WriteToUDP(response, clientAddr)
-	// 		if err != nil {
-	// 			fmt.Println("Error sending response:", err)
-	// 			continue
-	// 		}
-	// 	}
-	// }
+		if string(buffer[:n]) == "<SCAN_REQUEST/>" {
+			// 发送消息给客户端
+			response := []byte("<SCAN macAddress=\"00:1A:2B:3C:4D:5E\"/>")
+			_, err = conn.WriteToUDP(response, clientAddr)
+			if err != nil {
+				fmt.Println("Error sending response:", err)
+				continue
+			}
+		}
+	}
 }
 
 func init() {

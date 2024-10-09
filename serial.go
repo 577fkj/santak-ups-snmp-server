@@ -35,6 +35,9 @@ func serialReadLine(tty *TTY) string {
 	for {
 		n, err := tty.Serial.Read(buf[0:])
 		if err != nil {
+			if err.Error() == "The handle is invalid." {
+				return ""
+			}
 			Logger.Errorf("read err: %s", err.Error())
 			break
 		}
