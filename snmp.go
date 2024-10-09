@@ -349,8 +349,10 @@ func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNM
 
 		master.Logger.Infof("Add service [%s](%s) %s", name, m_id, oid_str)
 
-		if !id.Writable {
+		if id.Writable {
+			Logger.Infof("Add Service [%s](%s) %s is writable", name, m_id, oid_str)
 			onSet := func(value interface{}) error {
+				Logger.Debugf("Set: %s", name)
 				if !field.IsValid() {
 					return fmt.Errorf("field not found")
 				}

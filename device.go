@@ -339,6 +339,8 @@ var Mt1000Pro = Device{
 
 	OnReceive: Mt1000ProOnReceive,
 
+	SetCallback: Mt1000ProSetCallback,
+
 	Test:             "T",
 	TestToBatteryLow: "",
 	TestWithMinimum:  "",
