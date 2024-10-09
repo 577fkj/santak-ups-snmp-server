@@ -119,4 +119,5 @@ func (a *Alarm) Apply() {
 	a.Snmp.AddTable("upsAlarmId", "upsAlarmId", size, gosnmp.Integer, onGet)
 	a.Snmp.AddTable("upsAlarmDescr", "upsAlarmDescr", size, gosnmp.ObjectIdentifier, onGet)
 	a.Snmp.AddTable("upsAlarmTime", "upsAlarmTime", size, gosnmp.TimeTicks, onGet)
+	a.Snmp.Apply()
 }

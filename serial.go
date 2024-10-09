@@ -98,6 +98,10 @@ func createSerialSend(tty *TTY) func(value string) {
 }
 
 func serialReceived(userData any, value string) {
+	if userData == nil {
+		// Linux receiving too fast
+		return
+	}
 	snmp := userData.(*SNMP)
 	err := snmp.Device.OnReceive(snmp, data, value)
 	if err != nil {

@@ -431,12 +431,10 @@ func (s *SNMP) Run() {
 
 func (s *SNMP) AddPublicOID(oid *GoSNMPServer.PDUValueControlItem) {
 	s.Public.OIDs = append(s.Public.OIDs, oid)
-	s.Public.SyncConfig()
 }
 
 func (s *SNMP) AddPrivateOID(oid *GoSNMPServer.PDUValueControlItem) {
 	s.Private.OIDs = append(s.Private.OIDs, oid)
-	s.Private.SyncConfig()
 }
 
 // 获取 OID。
@@ -456,6 +454,10 @@ func (s *SNMP) GetOID(name string, count int) string {
 	return fmt.Sprintf(".%s.%d", oid.String(), count)
 }
 
+func (s *SNMP) Apply() {
+	s.Public.SyncConfig()
+}
+
 // 添加一个表。
 // name: 服务名。
 // obj: 对象。
@@ -463,7 +465,7 @@ func (s *SNMP) GetOID(name string, count int) string {
 // onGet: 获取数据的回调函数。
 func (s *SNMP) AddTable(name string, obj any, count int, tp gosnmp.Asn1BER, onGet func(obj any, index int) (any, error)) {
 	for i := 0; i < count; i++ {
-		index := i
+		index := i + 1
 		s.Public.OIDs = append(s.Public.OIDs, &GoSNMPServer.PDUValueControlItem{
 			OID:  s.GetOID(name, index),
 			Type: tp,
@@ -472,7 +474,6 @@ func (s *SNMP) AddTable(name string, obj any, count int, tp gosnmp.Asn1BER, onGe
 			},
 		})
 	}
-	s.Public.SyncConfig()
 }
 
 // 移除所有表。
@@ -486,7 +487,6 @@ func (s *SNMP) RemoveAllTable(name string) {
 			i--
 		}
 	}
-	s.Public.SyncConfig()
 }
 
 // 移除表。
@@ -500,5 +500,4 @@ func (s *SNMP) RemoveTable(name string, index int) {
 			break
 		}
 	}
-	s.Public.SyncConfig()
 }

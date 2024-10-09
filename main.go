@@ -202,6 +202,8 @@ func main() {
 	// 	},
 	// })
 
+	// snmp.Apply()
+
 	// go runNCM()
 
 	snmp.Run()
