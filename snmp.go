@@ -245,26 +245,45 @@ func getFieldInfoFromType(t reflect.Type) []SNMPFieldInfo {
 }
 
 func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNMP {
-
 	snmp := &SNMP{
 		Data:   data,
 		Config: &config,
 	}
 
-	public := GoSNMPServer.SubAgent{
-		CommunityIDs: []string{config.PublicName},
-	}
-
-	private := GoSNMPServer.SubAgent{
-		CommunityIDs: []string{config.PrivateName},
-	}
+	// 读写共同体
+	useRW := config.PublicName == config.PrivateName
 
 	master := GoSNMPServer.MasterAgent{
 		SecurityConfig: GoSNMPServer.SecurityConfig{
 			AuthoritativeEngineBoots: 1,
 			Users:                    []gosnmp.UsmSecurityParameters{},
 		},
-		SubAgents: []*GoSNMPServer.SubAgent{&public, &private},
+	}
+
+	if config.Auth != nil {
+		master.SecurityConfig.Users = []gosnmp.UsmSecurityParameters{
+			{
+				UserName:                 config.Auth.Username,
+				AuthenticationProtocol:   config.Auth.AuthProto,
+				PrivacyProtocol:          config.Auth.PrivProto,
+				AuthenticationPassphrase: config.Auth.AuthKey,
+				PrivacyPassphrase:        config.Auth.PrivKey,
+			},
+		}
+	}
+
+	public := GoSNMPServer.SubAgent{
+		CommunityIDs: []string{config.PublicName},
+	}
+
+	var private GoSNMPServer.SubAgent
+	if !useRW {
+		private = GoSNMPServer.SubAgent{
+			CommunityIDs: []string{config.PrivateName},
+		}
+		master.SubAgents = []*GoSNMPServer.SubAgent{&public, &private}
+	} else {
+		master.SubAgents = []*GoSNMPServer.SubAgent{&public}
 	}
 
 	if config.Logger != nil {
@@ -349,9 +368,10 @@ func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNM
 
 		master.Logger.Infof("Add service [%s](%s) %s", name, m_id, oid_str)
 
+		var onSet func(value interface{}) error
 		if id.Writable {
 			Logger.Infof("Add Service [%s](%s) %s is writable", name, m_id, oid_str)
-			onSet := func(value interface{}) error {
+			onSet = func(value interface{}) error {
 				Logger.Debugf("Set: %s", name)
 				if !field.IsValid() {
 					return fmt.Errorf("field not found")
@@ -362,11 +382,13 @@ func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNM
 				}
 				return nil
 			}
-			private.OIDs = append(private.OIDs, &GoSNMPServer.PDUValueControlItem{
-				OID:   oid_str,
-				Type:  tp,
-				OnSet: onSet,
-			})
+			if !useRW {
+				private.OIDs = append(private.OIDs, &GoSNMPServer.PDUValueControlItem{
+					OID:   oid_str,
+					Type:  tp,
+					OnSet: onSet,
+				})
+			}
 		}
 		public.OIDs = append(public.OIDs, &GoSNMPServer.PDUValueControlItem{
 			OID:  oid_str,
@@ -379,19 +401,8 @@ func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNM
 				master.Logger.Debugf("Get data: %s", field.Interface())
 				return field.Interface(), nil
 			},
+			OnSet: onSet,
 		})
-	}
-
-	if config.Auth != nil {
-		master.SecurityConfig.Users = []gosnmp.UsmSecurityParameters{
-			{
-				UserName:                 config.Auth.Username,
-				AuthenticationProtocol:   config.Auth.AuthProto,
-				PrivacyProtocol:          config.Auth.PrivProto,
-				AuthenticationPassphrase: config.Auth.AuthKey,
-				PrivacyPassphrase:        config.Auth.PrivKey,
-			},
-		}
 	}
 
 	listen := fmt.Sprintf("%s:%d", config.Address, config.Port)
@@ -406,7 +417,9 @@ func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNM
 	snmp.Server = server
 	snmp.Master = &master
 	snmp.Public = &public
-	snmp.Private = &private
+	if !useRW {
+		snmp.Private = &private
+	}
 
 	return snmp
 }
@@ -436,6 +449,9 @@ func (s *SNMP) AddPublicOID(oid *GoSNMPServer.PDUValueControlItem) {
 }
 
 func (s *SNMP) AddPrivateOID(oid *GoSNMPServer.PDUValueControlItem) {
+	if s.Private == nil {
+		return
+	}
 	s.Private.OIDs = append(s.Private.OIDs, oid)
 }
 
