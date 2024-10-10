@@ -388,6 +388,7 @@ func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNM
 					Type:  tp,
 					OnSet: onSet,
 				})
+				onSet = nil
 			}
 		}
 		public.OIDs = append(public.OIDs, &GoSNMPServer.PDUValueControlItem{
