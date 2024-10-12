@@ -199,8 +199,38 @@ func Mt1000ProOnReceive(snmp *SNMP, data *SNMPData, value string) error {
 		}
 
 		alarm.Apply()
+
+		if v.Status.UtilityFail {
+			trap := TrapData{
+				OID: "upsTrapOnBattery",
+				Data: []TrapDataItem{
+					{
+						OID:   "upsEstimatedMinutesRemaining",
+						Type:  gosnmp.Integer,
+						Value: data.Battery.Minutes,
+					},
+					{
+						OID:   "upsSecondsOnBattery",
+						Type:  gosnmp.Integer,
+						Value: userData.BatterySecond,
+					},
+					// {
+					// 	OID:   "upsConfigLowBattTime",
+					// 	Type:  gosnmp.Integer,
+					// 	Value: 5,
+					// },
+				},
+			}
+
+			snmp.SendTrap(trap)
+		}
 	case RatingInfo:
 		Logger.Debugf("RatingInfo: %#v", v)
+
+		data.Config.InputVoltage = int(v.VoltageRating)
+		data.Config.InputFreq = int(v.FrequencyRating)
+		data.Config.OutputVoltage = int(v.VoltageRating)
+		data.Config.OutputFreq = int(v.FrequencyRating)
 
 		userData.Rating = v
 	default:
@@ -221,6 +251,12 @@ func Mt1000ProInit(snmp *SNMP, data *SNMPData) error {
 	data.Output.NumLines = 1
 
 	data.Bypass.NumLines = 1
+
+	data.Config.OutputVA = 1000
+	data.Config.OutputPower = 600
+	data.Config.LowBatteryTime = 20
+	data.Config.LowVoltageTransferPoint = 173
+	data.Config.HighVoltageTransferPoint = 273
 
 	data.UserData = &Mt1000ProUserData{}
 
@@ -329,7 +365,16 @@ var Mt1000Pro = Device{
 			Present: 1,
 		},
 		Config: &SNMPDataConfig{
-			AudibleStatus: 1,
+			InputVoltage:             1,
+			InputFreq:                1,
+			OutputVoltage:            1,
+			OutputFreq:               1,
+			OutputVA:                 1,
+			OutputPower:              1,
+			LowBatteryTime:           1,
+			AudibleStatus:            1,
+			LowVoltageTransferPoint:  1,
+			HighVoltageTransferPoint: 1,
 		},
 	},
 

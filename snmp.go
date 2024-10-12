@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/gosnmp/gosnmp"
 	"github.com/hallidave/mibtool/smi"
@@ -153,6 +154,9 @@ type SNMP struct {
 
 	Config *SNMPConfig
 
+	Trap             []*gosnmp.GoSNMP
+	TrapAgentAddress string
+
 	Server  *GoSNMPServer.SNMPServer
 	Master  *GoSNMPServer.MasterAgent
 	Public  *GoSNMPServer.SubAgent
@@ -178,7 +182,7 @@ type SNMPConfig struct {
 	PublicName  string
 	PrivateName string
 
-	Auth *SNMPAuth
+	Auth []SNMPAuth
 
 	SetCallback func(snmp *SNMP, name string, value interface{}) error
 }
@@ -261,14 +265,15 @@ func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNM
 	}
 
 	if config.Auth != nil {
-		master.SecurityConfig.Users = []gosnmp.UsmSecurityParameters{
-			{
-				UserName:                 config.Auth.Username,
-				AuthenticationProtocol:   config.Auth.AuthProto,
-				PrivacyProtocol:          config.Auth.PrivProto,
-				AuthenticationPassphrase: config.Auth.AuthKey,
-				PrivacyPassphrase:        config.Auth.PrivKey,
-			},
+		master.SecurityConfig.SnmpV3Only = true
+		for _, auth := range config.Auth {
+			master.SecurityConfig.Users = append(master.SecurityConfig.Users, gosnmp.UsmSecurityParameters{
+				UserName:                 auth.Username,
+				AuthenticationProtocol:   auth.AuthProto,
+				PrivacyProtocol:          auth.PrivProto,
+				AuthenticationPassphrase: auth.AuthKey,
+				PrivacyPassphrase:        auth.PrivKey,
+			})
 		}
 	}
 
@@ -370,7 +375,7 @@ func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNM
 
 		var onSet func(value interface{}) error
 		if id.Writable {
-			Logger.Infof("Add Service [%s](%s) %s is writable", name, m_id, oid_str)
+			master.Logger.Infof("Add Service [%s](%s) %s is writable", name, m_id, oid_str)
 			onSet = func(value interface{}) error {
 				Logger.Debugf("Set: %s", name)
 				if !field.IsValid() {
@@ -423,6 +428,104 @@ func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNM
 	}
 
 	return snmp
+}
+
+type TrapConfig struct {
+	Host      string
+	Port      uint16
+	Community string
+
+	Version gosnmp.SnmpVersion
+
+	Auth *SNMPAuth
+}
+
+type TrapData struct {
+	OID  string
+	Data []TrapDataItem
+}
+
+type TrapDataItem struct {
+	OID   string
+	Type  gosnmp.Asn1BER
+	Value interface{}
+}
+
+func (s *SNMP) AddTrap(config TrapConfig) error {
+	g := &gosnmp.GoSNMP{
+		Target:    config.Host,
+		Port:      config.Port,
+		Version:   config.Version,
+		Community: config.Community,
+		Timeout:   time.Duration(2) * time.Second,
+		Logger:    gosnmp.NewLogger(SNMPLogger),
+	}
+
+	if config.Auth != nil {
+		g.Version = gosnmp.Version3
+		g.MsgFlags = gosnmp.AuthPriv
+		g.SecurityModel = gosnmp.UserSecurityModel
+		g.SecurityParameters = &gosnmp.UsmSecurityParameters{
+			UserName:                 config.Auth.Username,
+			AuthenticationProtocol:   config.Auth.AuthProto,
+			PrivacyProtocol:          config.Auth.PrivProto,
+			AuthenticationPassphrase: config.Auth.AuthKey,
+			PrivacyPassphrase:        config.Auth.PrivKey,
+		}
+	}
+
+	// 初始化连接
+	err := g.Connect()
+	if err != nil {
+		SNMPLogger.Errorf("Connect to SNMP trap server faild: %s", err.Error())
+		return err
+	}
+
+	s.Trap = append(s.Trap, g)
+
+	return nil
+}
+
+func (s *SNMP) SendTrap(data TrapData) error {
+	if len(s.Trap) == 0 {
+		return nil
+	}
+
+	enterprise, specific, err := ExtractEnterpriseIDAndSpecificTrap(s.GetOID(data.OID, -1))
+	if err != nil {
+		panic(err.Error())
+	}
+
+	trap := gosnmp.SnmpTrap{
+		Variables: []gosnmp.SnmpPDU{
+			{
+				Name:  s.GetOID(data.OID, -1),
+				Type:  gosnmp.ObjectIdentifier,
+				Value: s.GetOID(data.OID, -1),
+			},
+		},
+		Enterprise:   enterprise,
+		AgentAddress: s.TrapAgentAddress,
+		GenericTrap:  6,
+		SpecificTrap: specific,
+		Timestamp:    uint(getRunningTimeInSeconds() * 100),
+	}
+	for _, v := range data.Data {
+		trap.Variables = append(trap.Variables, gosnmp.SnmpPDU{
+			Name:  s.GetOID(v.OID, -1),
+			Type:  v.Type,
+			Value: v.Value,
+		})
+	}
+
+	for _, t := range s.Trap {
+		_, err := t.SendTrap(trap)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *SNMP) SetDevice(device Device) {

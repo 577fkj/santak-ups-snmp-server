@@ -1,0 +1,27 @@
+com-port: COM8
+address: 0.0.0.0
+port: 161
+snmp:
+  public: public
+  private: private
+  user:
+    - username: test
+      privpass: test
+      authpass: test
+      authproto: MD5
+      privproto: AES
+  trap:
+    - enable: true
+      host: 192.168.1.1
+      port: 162
+      community: public
+      user:
+        username: test
+        privpass: test
+        authpass: test
+        authproto: MD5
+        privproto: AES
+      version: 3
+  log-level: error
+disable-buzz: false
+log-level: info

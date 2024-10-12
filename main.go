@@ -9,31 +9,99 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gosnmp/gosnmp"
 	rotatelogs "github.com/lestrrat-go/file-rotatelogs"
 	"github.com/rifflock/lfshook"
 	"github.com/sirupsen/logrus"
 	"github.com/slayercat/GoSNMPServer"
 	"github.com/spf13/pflag"
 	"go.bug.st/serial/enumerator"
+	"gopkg.in/yaml.v3"
 )
 
-type RunArgs struct {
-	COMPort string
-	Address string
-	Port    int
+type User struct {
+	Username  string `yaml:"username"`
+	PrivPass  string `yaml:"privpass"`
+	AuthPass  string `yaml:"authpass"`
+	AuthProto string `yaml:"authproto"`
+	PrivProto string `yaml:"privproto"`
+}
 
-	// SNMP
-	PublicName  string
-	PrivateName string
-	Username    string
-	PrivPass    string
-	AuthPass    string
-	AuthProto   string
-	PrivProto   string
+type Trap struct {
+	Enable    bool   `yaml:"enable"`
+	Host      string `yaml:"host"`
+	Port      int    `yaml:"port"`
+	Community string `yaml:"community"`
+	User      User   `yaml:"user"`
 
-	DisableBuzz bool
+	Version gosnmp.SnmpVersion `yaml:"version"`
+}
 
-	LogLevel string
+type Snmp struct {
+	PublicName  string `yaml:"public"`
+	PrivateName string `yaml:"private"`
+
+	User []User `yaml:"user"`
+
+	Trap []Trap `yaml:"trap"`
+
+	LogLevel string `yaml:"log-level"`
+}
+
+type RunConfig struct {
+	COMPort string `yaml:"com-port"`
+
+	Address string `yaml:"address"`
+	Port    int    `yaml:"port"`
+
+	Snmp Snmp `yaml:"snmp"`
+
+	DisableBuzz bool `yaml:"disable-buzz"`
+
+	LogLevel string `yaml:"log-level"`
+}
+
+var defaultConfig = RunConfig{
+	COMPort: "COM8",
+	Address: "0.0.0.0",
+	Port:    161,
+
+	Snmp: Snmp{
+		PublicName:  "public",
+		PrivateName: "private",
+
+		User: []User{
+			{
+				Username:  "test",
+				PrivPass:  "test",
+				AuthPass:  "test",
+				AuthProto: "MD5",
+				PrivProto: "AES",
+			},
+		},
+
+		Trap: []Trap{
+			{
+				Enable:    true,
+				Host:      "192.168.1.1",
+				Port:      162,
+				Community: "public",
+				Version:   gosnmp.Version2c,
+				User: User{
+					Username:  "test",
+					PrivPass:  "test",
+					AuthPass:  "test",
+					AuthProto: "MD5",
+					PrivProto: "AES",
+				},
+			},
+		},
+
+		LogLevel: "error",
+	},
+
+	DisableBuzz: false,
+	LogLevel:    "info",
 }
 
 var data = &SNMPData{
@@ -55,24 +123,37 @@ var SNMPLogger *logrus.Logger
 
 var sigs chan os.Signal
 
-var config = RunArgs{}
+var config = RunConfig{}
 
 func argsParse() {
-	pflag.StringVarP(&config.COMPort, "com", "c", "", "串口设备 [COM8, /dev/ttyUSB0]")
-	pflag.StringVarP(&config.Address, "address", "a", "0.0.0.0", "监听地址 (可选)")
-	pflag.IntVarP(&config.Port, "port", "p", 161, "监听端口 (可选)")
+	var configPath string
+	pflag.StringVarP(&configPath, "config", "c", "config.yml", "配置文件路径 (可选)")
 
-	pflag.StringVarP(&config.PublicName, "public", "P", "public", "SNMPv1/v2c 公共名 (可选)")
-	pflag.StringVarP(&config.PrivateName, "private", "R", "private", "SNMPv1/v2c 私有名 (可选)")
-	pflag.StringVarP(&config.Username, "username", "u", "admin", "SNMPv3 用户名 (可选)")
-	pflag.StringVarP(&config.AuthPass, "authpass", "A", "admin", "SNMPv3 认证密码 (可选)")
-	pflag.StringVarP(&config.PrivPass, "privpass", "V", "admin", "SNMPv3 加密密码 (可选)")
-	pflag.StringVarP(&config.AuthProto, "authproto", "t", "MD5", "SNMPv3 认证协议 [MD5, SHA, SHA224, SHA256, SHA384, SHA512] (可选)")
-	pflag.StringVarP(&config.PrivProto, "privproto", "i", "DES", "SNMPv3 加密协议 [DES, AES, AES192, AES192C, AES256, AES256C] (可选)")
-
-	pflag.BoolVarP(&config.DisableBuzz, "disable-buzz", "b", false, "禁用蜂鸣器 (可选)")
-
-	pflag.StringVarP(&config.LogLevel, "log", "l", "info", "日志级别 [trace, debug, info, warn, error, fatal] (可选)")
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		config = defaultConfig
+		// 保存默认配置到文件
+		dataBytes, err := yaml.Marshal(config)
+		if err != nil {
+			fmt.Println("解析配置文件失败：", err)
+			return
+		}
+		err = os.WriteFile(configPath, dataBytes, 0644)
+		if err != nil {
+			fmt.Println("保存配置文件失败：", err)
+			return
+		}
+	} else {
+		dataBytes, err := os.ReadFile(configPath)
+		if err != nil {
+			fmt.Println("读取文件失败：", err)
+			return
+		}
+		err = yaml.Unmarshal(dataBytes, &config)
+		if err != nil {
+			fmt.Println("解析配置文件失败：", err)
+			return
+		}
+	}
 
 	pflag.Parse()
 
@@ -99,27 +180,31 @@ func argsParse() {
 	}
 }
 
+func setLogLevel(log *logrus.Logger, level string) {
+	lvl, err := logrus.ParseLevel(level)
+	if err != nil {
+		panic("Log level error: " + err.Error())
+	}
+	log.SetLevel(lvl)
+}
+
 func main() {
 	sigs = make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
 
 	argsParse()
-	lvl, err := logrus.ParseLevel(config.LogLevel)
-	if err != nil {
-		panic("Log level error: " + err.Error())
-	}
-	Logger.SetLevel(lvl)
-	SNMPLogger.SetLevel(lvl)
+	setLogLevel(Logger, config.LogLevel)
+	setLogLevel(SNMPLogger, config.Snmp.LogLevel)
 
-	var auth SNMPAuth
-	if config.Username != "" && config.AuthPass != "" && config.PrivPass != "" {
-		auth = SNMPAuth{
-			Username:  config.Username,
-			AuthKey:   config.AuthPass,
-			PrivKey:   config.PrivPass,
-			AuthProto: getAuthProto(config.AuthProto),
-			PrivProto: getPrivProto(config.PrivProto),
-		}
+	var auth []SNMPAuth
+	for _, user := range config.Snmp.User {
+		auth = append(auth, SNMPAuth{
+			Username:  user.Username,
+			AuthKey:   user.AuthPass,
+			PrivKey:   user.PrivPass,
+			AuthProto: getAuthProto(user.AuthProto),
+			PrivProto: getPrivProto(user.PrivProto),
+		})
 	}
 
 	serial, err := serialInit(TTYConfig{
@@ -134,13 +219,13 @@ func main() {
 	device := Mt1000Pro
 
 	snmp := snmp_server(SNMPConfig{
-		PublicName:  config.PublicName,
-		PrivateName: config.PrivateName,
+		PublicName:  config.Snmp.PublicName,
+		PrivateName: config.Snmp.PrivateName,
 
 		Address: config.Address,
 		Port:    config.Port,
 
-		Auth: &auth,
+		Auth: auth,
 
 		SetCallback: device.SetCallback,
 
@@ -148,6 +233,30 @@ func main() {
 	}, device.EnableService, data)
 	snmp.SetDevice(device)
 	snmp.SetSerialSend(createSerialSend(serial))
+
+	for _, trap := range config.Snmp.Trap {
+		if trap.Enable {
+			config := TrapConfig{
+				Host:      trap.Host,
+				Port:      uint16(trap.Port),
+				Community: trap.Community,
+				Version:   trap.Version,
+			}
+
+			if trap.User.Username != "" && trap.User.AuthPass != "" && trap.User.PrivPass != "" {
+				config.Auth = &SNMPAuth{
+					Username: trap.User.Username,
+					AuthKey:  trap.User.AuthPass,
+					PrivKey:  trap.User.PrivPass,
+
+					AuthProto: getAuthProto(trap.User.AuthProto),
+					PrivProto: getPrivProto(trap.User.PrivProto),
+				}
+			}
+
+			snmp.AddTrap(config)
+		}
+	}
 
 	alarm.SetSNMP(snmp)
 

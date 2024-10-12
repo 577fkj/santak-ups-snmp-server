@@ -25,6 +25,7 @@ func (tty *TTY) Send(value string) error {
 	if value == "" {
 		return nil
 	}
+	Logger.Debugf("tty send: %s", value)
 	_, err := tty.Serial.Write([]byte(value + "\r"))
 	return err
 }

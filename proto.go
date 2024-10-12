@@ -181,6 +181,11 @@ func ProtoParse(data string) any {
 	case ExtraQueryByteChar:
 		return ParseExtra(data)
 	default:
+		for i, c := range data {
+			if c == QueryByteChar || c == RatingByteChar || c == ExtraQueryByteChar {
+				return ProtoParse(data[i:])
+			}
+		}
 		return nil
 	}
 }

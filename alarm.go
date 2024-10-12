@@ -10,12 +10,35 @@ import (
 type Alarm struct {
 	Alarms []AlarmEntry
 	Snmp   *SNMP
+	Trap   []TrapData
 
 	NeedApply bool
 }
 
 func (a *Alarm) SetSNMP(snmp *SNMP) {
 	a.Snmp = snmp
+}
+
+func (a *Alarm) AddTrap(add bool, index int, oid string) {
+	name := "upsTrapAlarmEntryAdded"
+	if !add {
+		name = "upsTrapAlarmEntryRemoved"
+	}
+	a.Trap = append(a.Trap, TrapData{
+		OID: name,
+		Data: []TrapDataItem{
+			{
+				OID:   "upsAlarmId",
+				Type:  gosnmp.Integer,
+				Value: index,
+			},
+			{
+				OID:   "upsAlarmDescr",
+				Type:  gosnmp.ObjectIdentifier,
+				Value: oid,
+			},
+		},
+	})
 }
 
 func (a *Alarm) Add(desc string) int {
@@ -34,6 +57,7 @@ func (a *Alarm) Add(desc string) int {
 		Descr: desc,
 		Time:  TimesTamp(getRunningTimeInSeconds()),
 	})
+	a.AddTrap(true, index, desc)
 	return index
 }
 
@@ -49,6 +73,7 @@ func (a *Alarm) Clear() {
 
 func (a *Alarm) Remove(index int) {
 	if index < len(a.Alarms) {
+		a.AddTrap(false, a.Alarms[index].Index, a.Alarms[index].Descr)
 		a.Alarms = append(a.Alarms[:index], a.Alarms[index+1:]...)
 		a.NeedApply = true
 	}
@@ -66,15 +91,17 @@ func (a *Alarm) getOID(desc string) string {
 	return oid
 }
 
-func (a *Alarm) RemoveWithDesc(desc string) {
+func (a *Alarm) RemoveWithDesc(desc string) (int, bool) {
 	desc = a.getOID(desc)
 	for i, alarm := range a.Alarms {
 		if alarm.Descr == desc {
 			a.Remove(i)
 			a.NeedApply = true
-			return
+			a.AddTrap(false, alarm.Index, alarm.Descr)
+			return alarm.Index, true
 		}
 	}
+	return -1, false
 }
 
 func (a *Alarm) Exist(desc string) bool {
@@ -120,4 +147,8 @@ func (a *Alarm) Apply() {
 	a.Snmp.AddTable("upsAlarmDescr", "upsAlarmDescr", size, gosnmp.ObjectIdentifier, onGet)
 	a.Snmp.AddTable("upsAlarmTime", "upsAlarmTime", size, gosnmp.TimeTicks, onGet)
 	a.Snmp.Apply()
+	for _, trap := range a.Trap {
+		a.Snmp.SendTrap(trap)
+	}
+	a.Trap = a.Trap[:0]
 }

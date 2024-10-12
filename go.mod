@@ -32,4 +32,5 @@ require (
 	github.com/yusufpapurcu/wmi v1.2.3 // indirect
 	go.bug.st/serial v1.6.2 // indirect
 	golang.org/x/sys v0.15.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
