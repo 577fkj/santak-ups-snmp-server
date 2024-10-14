@@ -90,7 +90,7 @@ type SNMPDataAlarm struct {
 	// ------------------------------------------------
 	// upsAlarmIndex   int
 	// upsAlarmDescr   string
-	// upsAlarmTime    int
+	// upsAlarmTime    TimeStamp
 }
 
 type SNMPDataTest struct {
@@ -384,7 +384,7 @@ func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNM
 
 		var onSet func(value interface{}) error
 		if id.Writable {
-			master.Logger.Infof("Add Service [%s](%s) %s is writable", name, m_id, oid_str)
+			master.Logger.Infof("Add service [%s](%s) %s is writable", name, m_id, oid_str)
 			onSet = func(value interface{}) error {
 				Logger.Debugf("Set: %s", name)
 				if !field.IsValid() {
@@ -413,8 +413,15 @@ func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNM
 				if !field.IsValid() {
 					return nil, fmt.Errorf("field not found")
 				}
-				master.Logger.Debugf("Get data: %s", field.Interface())
-				return field.Interface(), nil
+				value := field.Interface()
+				master.Logger.Debugf("Get data: %s", value)
+				switch v := value.(type) {
+				case TimesTamp:
+					value = uint32(v)
+				default:
+					value = v
+				}
+				return value, nil
 			},
 			OnSet: onSet,
 		})
