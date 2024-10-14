@@ -25,3 +25,6 @@ snmp:
   log-level: error
 disable-buzz: false
 log-level: info
+log-filter:
+  - "udp request from"
+  - "OIDs of"

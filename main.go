@@ -2,10 +2,12 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -58,7 +60,8 @@ type RunConfig struct {
 
 	DisableBuzz bool `yaml:"disable-buzz"`
 
-	LogLevel string `yaml:"log-level"`
+	LogLevel  string   `yaml:"log-level"`
+	LogFilter []string `yaml:"log-filter"`
 }
 
 var defaultConfig = RunConfig{
@@ -195,6 +198,16 @@ func main() {
 	argsParse()
 	setLogLevel(Logger, config.LogLevel)
 	setLogLevel(SNMPLogger, config.Snmp.LogLevel)
+
+	var words []string
+	for _, key := range config.LogFilter {
+		if key == "" {
+			continue
+		}
+		words = append(words, strings.TrimSpace(key))
+	}
+	Logger.Infof("Filter words: %s", strings.Join(words, ", "))
+	filter.FilterWords = words
 
 	var auth []SNMPAuth
 	for _, user := range config.Snmp.User {
@@ -371,6 +384,45 @@ func init() {
 	SNMPLogger = newLog("snmp")
 }
 
+var filter = &ContentFilterHook{}
+
+// ContentFilterHook 用于过滤包含特定关键字的日志
+type ContentFilterHook struct {
+	FilterWords []string
+}
+
+// Levels 定义 Hook 适用于哪些日志级别
+func (hook *ContentFilterHook) Levels() []logrus.Level {
+	return []logrus.Level{
+		logrus.PanicLevel,
+		logrus.FatalLevel,
+		logrus.ErrorLevel,
+		logrus.WarnLevel,
+		logrus.InfoLevel,
+	}
+}
+
+// Fire 根据日志内容进行过滤
+func (hook *ContentFilterHook) Fire(entry *logrus.Entry) error {
+	if len(hook.FilterWords) == 0 {
+		return nil
+	}
+
+	for _, word := range hook.FilterWords {
+		if strings.Contains(entry.Message, word) {
+			// replce entry with emtpy one to discard message
+			*entry = logrus.Entry{
+				Logger: &logrus.Logger{
+					Out:       io.Discard,
+					Formatter: &logrus.JSONFormatter{},
+				},
+			}
+			return nil
+		}
+	}
+	return nil
+}
+
 func newLog(name string) *logrus.Logger {
 	// 创建一个 writer
 	logWriter, err := rotatelogs.New(
@@ -417,6 +469,9 @@ func newLog(name string) *logrus.Logger {
 		FullTimestamp: true,
 		ForceColors:   true,
 	})
+
+	logger.AddHook(filter)
+
 	logger.AddHook(hook)
 	return logger
 }
