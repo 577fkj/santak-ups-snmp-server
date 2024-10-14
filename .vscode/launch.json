@@ -10,9 +10,10 @@
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceFolder}",
+            "env": {
+                "GOOS": "windows"
+            },
             "args": [
-                "-c",
-                "COM8"
             ]
         }
     ]

@@ -394,10 +394,6 @@ type ContentFilterHook struct {
 // Levels 定义 Hook 适用于哪些日志级别
 func (hook *ContentFilterHook) Levels() []logrus.Level {
 	return []logrus.Level{
-		logrus.PanicLevel,
-		logrus.FatalLevel,
-		logrus.ErrorLevel,
-		logrus.WarnLevel,
 		logrus.InfoLevel,
 	}
 }
@@ -412,6 +408,7 @@ func (hook *ContentFilterHook) Fire(entry *logrus.Entry) error {
 		if strings.Contains(entry.Message, word) {
 			// replce entry with emtpy one to discard message
 			*entry = logrus.Entry{
+				Level: logrus.TraceLevel,
 				Logger: &logrus.Logger{
 					Out:       io.Discard,
 					Formatter: &logrus.JSONFormatter{},
@@ -452,7 +449,6 @@ func newLog(name string) *logrus.Logger {
 			logrus.DebugLevel: logWriter,
 			logrus.InfoLevel:  logWriter,
 			logrus.WarnLevel:  logWriter,
-			logrus.TraceLevel: logWriter,
 
 			logrus.ErrorLevel: errorWriter,
 			logrus.FatalLevel: errorWriter,
