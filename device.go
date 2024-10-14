@@ -39,6 +39,8 @@ type Device struct {
 }
 
 type Mt1000ProUserData struct {
+	InTest        bool
+	InTestCount   int
 	Rating        RatingInfo
 	BatterySecond int
 	InputInfo     struct {
@@ -214,15 +216,43 @@ func Mt1000ProOnReceive(snmp *SNMP, data *SNMPData, value string) error {
 						Type:  gosnmp.Integer,
 						Value: userData.BatterySecond,
 					},
-					// {
-					// 	OID:   "upsConfigLowBattTime",
-					// 	Type:  gosnmp.Integer,
-					// 	Value: 5,
-					// },
+					{
+						OID:   "upsConfigLowBattTime",
+						Type:  gosnmp.Integer,
+						Value: data.Config.LowBatteryTime,
+					},
 				},
 			}
 
 			snmp.SendTrap(trap)
+
+			// Test
+			if data.Test.ResultsSummary != 5 {
+				break
+			}
+			if userData.InTestCount == 20 {
+				data.Test.SpinLock = 3
+				data.Test.ResultsSummary = 4
+				data.Test.ResultsDetail = "Time out"
+				data.Test.Id = snmp.GetOID("upsTestAbortTestInProgress", -1)
+				userData.InTest = false
+				userData.InTestCount = 0
+			}
+			if !userData.InTest {
+				if v.Status.TestActive {
+					userData.InTest = true
+				} else {
+					userData.InTestCount += 1
+					break
+				}
+			}
+			data.Test.ElapsedTime = TimesTamp(getRunningTimeInSeconds()) - data.Test.StartTime
+			if !v.Status.TestActive {
+				data.Test.SpinLock = 3
+				data.Test.ResultsSummary = 1
+				data.Test.ResultsDetail = "OK"
+				userData.InTest = false
+			}
 		}
 	case RatingInfo:
 		Logger.Debugf("RatingInfo: %#v", v)
@@ -257,6 +287,10 @@ func Mt1000ProInit(snmp *SNMP, data *SNMPData) error {
 	data.Config.LowBatteryTime = 20
 	data.Config.LowVoltageTransferPoint = 173
 	data.Config.HighVoltageTransferPoint = 273
+
+	data.Test.SpinLock = 1
+	data.Test.Id = snmp.GetOID("upsTestNoTestsInitiated", -1)
+	data.Test.ResultsSummary = 6
 
 	data.UserData = &Mt1000ProUserData{}
 
@@ -313,6 +347,7 @@ func Mt1000ProInit(snmp *SNMP, data *SNMPData) error {
 
 func Mt1000ProSetCallback(snmp *SNMP, name string, value any) error {
 	data := snmp.Data
+	userData := data.UserData.(*Mt1000ProUserData)
 	Logger.Debugf("SetCallback: %s=%v", name, value)
 	switch name {
 	case "upsConfigAudibleStatus":
@@ -324,6 +359,30 @@ func Mt1000ProSetCallback(snmp *SNMP, name string, value any) error {
 			if data.Config.AudibleStatus == 0 {
 				snmp.TtySend(snmp.Device.SwitchBuzz)
 			}
+		}
+	case "upsTestId":
+		if data.Test.SpinLock != 1 {
+			break
+		}
+		quickTest := snmp.GetOID("upsTestQuickBatteryTest", -1)
+		if value == quickTest {
+			snmp.TtySend(snmp.Device.Test)
+			data.Test.Id = quickTest
+			data.Test.SpinLock = 2
+			data.Test.ResultsSummary = 5
+			data.Test.StartTime = TimesTamp(getRunningTimeInSeconds())
+			userData.InTest = false
+			userData.InTestCount = 0
+		}
+	case "upsTestSpinLock":
+		data.Test.SpinLock = value.(int)
+		if data.Test.SpinLock == 1 {
+			data.Test.Id = snmp.GetOID("upsTestNoTestsInitiated", -1)
+			data.Test.ResultsSummary = 6
+			data.Test.StartTime = 0
+			data.Test.ElapsedTime = 0
+			userData.InTest = false
+			userData.InTestCount = 0
 		}
 	}
 	return nil
@@ -363,6 +422,14 @@ var Mt1000Pro = Device{
 		},
 		Alarm: &SNMPDataAlarm{
 			Present: 1,
+		},
+		Test: &SNMPDataTest{
+			Id:             "1",
+			SpinLock:       1,
+			ResultsSummary: 1,
+			ResultsDetail:  "1",
+			StartTime:      1,
+			ElapsedTime:    1,
 		},
 		Config: &SNMPDataConfig{
 			InputVoltage:             1,

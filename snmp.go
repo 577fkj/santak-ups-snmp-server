@@ -99,7 +99,16 @@ type SNMPDataTest struct {
 	ResultsSummary int       `snmp:"upsTestResultsSummary"` // 测试状态 1: done, 2: done Warn, 3: done Error, 4: aborted, 5: in progress, 6: noRun
 	ResultsDetail  string    `snmp:"upsTestResultsDetail"`  // 测试结果
 	StartTime      TimesTamp `snmp:"upsTestStartTime"`      // 测试开始时间
-	ElapsedTime    int       `snmp:"upsTestElapsedTime"`    // 测试持续时间
+	ElapsedTime    TimesTamp `snmp:"upsTestElapsedTime"`    // 测试持续时间
+
+	// --
+	// Id
+	// --
+	// upsTestNoTestsInitiated        // 未测试
+	// upsTestAbortTestInProgress     // 测试中止
+	// upsTestGeneralSystemsTest      // 一般系统测试
+	// upsTestQuickBatteryTest        // 快速电池测试
+	// upsTestDeepBatteryCalibration  // 深度电池校准
 }
 
 type SNMPDataControl struct {
