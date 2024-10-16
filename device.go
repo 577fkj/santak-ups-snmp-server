@@ -58,9 +58,9 @@ type Mt1000ProUserData struct {
 }
 
 func Mt1000ProOnReceive(snmp *SNMP, data *SNMPData, value string) error {
-	parse := ProtoParse(value)
-	if parse == nil {
-		return errors.New("parse error: " + value)
+	parse, err := ProtoParse(value)
+	if err != nil {
+		return err
 	}
 
 	userData := data.UserData.(*Mt1000ProUserData)

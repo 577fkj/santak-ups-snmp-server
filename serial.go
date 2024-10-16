@@ -106,6 +106,6 @@ func serialReceived(userData any, value string) {
 	snmp := userData.(*SNMP)
 	err := snmp.Device.OnReceive(snmp, data, value)
 	if err != nil {
-		Logger.Errorf("OnReceive err: %s", err.Error())
+		Logger.Errorf("OnReceive data: %s, err: %s", value, err.Error())
 	}
 }

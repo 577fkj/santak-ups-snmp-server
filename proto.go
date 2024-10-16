@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 )
@@ -167,9 +168,9 @@ func parseFloat(s string) float32 {
 	return 0
 }
 
-func ProtoParse(data string) any {
+func ProtoParse(data string) (any, error) {
 	if len(data) == 0 {
-		return nil
+		return nil, errors.New("empty data")
 	}
 	startByte := data[0]
 	data = data[1:]
@@ -186,15 +187,15 @@ func ProtoParse(data string) any {
 				return ProtoParse(data[i:])
 			}
 		}
-		return nil
+		return nil, errors.New("invalid data")
 	}
 }
 
-func ParseQueryResult(data string) QueryResult {
+func ParseQueryResult(data string) (QueryResult, error) {
 	var result QueryResult
 	split := strings.Split(data, " ")
 	if len(split) != 8 {
-		return result
+		return result, errors.New("invalid QueryResult")
 	}
 	result.IPVoltage = parseFloat(split[0])
 	result.IPFaultVoltage = parseFloat(split[1])
@@ -223,23 +224,23 @@ func ParseQueryResult(data string) QueryResult {
 			result.Status.BuzzerActive = c == '1'
 		}
 	}
-	return result
+	return result, nil
 }
 
-func ParseRatingInfo(data string) RatingInfo {
+func ParseRatingInfo(data string) (RatingInfo, error) {
 	var result RatingInfo
 	split := strings.Split(data, " ")
 	if len(split) != 4 {
-		return result
+		return result, errors.New("invalid RatingInfo")
 	}
 	result.VoltageRating = parseFloat(split[0])
 	result.CurrentRating, _ = strconv.Atoi(split[1])
 	result.BatteryVoltage = parseFloat(split[2])
 	result.FrequencyRating = parseFloat(split[3])
-	return result
+	return result, nil
 }
 
-func ParseExtra(data string) any {
+func ParseExtra(data string) (any, error) {
 	split := strings.Split(data, " ")
 	switch len(split) {
 	case 8:
@@ -251,12 +252,17 @@ func ParseExtra(data string) any {
 	case 5:
 		return ParseTPRating(split)
 	default:
-		return nil
+		return nil, errors.New("invalid Extra")
 	}
 }
 
-func ParseExtraQueryResult(split []string) ExtraQueryResult {
+func ParseExtraQueryResult(split []string) (ExtraQueryResult, error) {
 	var result ExtraQueryResult
+
+	if len(split) != 8 {
+		return result, errors.New("invalid ExtraQueryResult")
+	}
+
 	result.BatteryVoltage, _ = strconv.Atoi(split[0])
 	result.BatteryCapacity, _ = strconv.Atoi(split[1])
 	result.BatteryTimeRemaining, _ = strconv.Atoi(split[2])
@@ -265,11 +271,15 @@ func ParseExtraQueryResult(split []string) ExtraQueryResult {
 	result.IPFreq = parseFloat(split[5])
 	result.BypassFreq = parseFloat(split[6])
 	result.OPFreq = parseFloat(split[7])
-	return result
+	return result, nil
 }
 
-func ParseExtraQueryError(split []string) ExtraQueryError {
+func ParseExtraQueryError(split []string) (ExtraQueryError, error) {
 	var result ExtraQueryError
+
+	if len(split) != 3 {
+		return result, errors.New("invalid ExtraQueryError")
+	}
 
 	// A 组
 	for i, c := range split[0] {
@@ -327,32 +337,55 @@ func ParseExtraQueryError(split []string) ExtraQueryError {
 		}
 	}
 
-	return result
+	return result, nil
 }
 
-func ParseTPInfo(split []string) TPInfo {
+func ParseTPInfo(split []string) (TPInfo, error) {
 	var result TPInfo
 
+	if len(split) != 4 {
+		return result, errors.New("invalid TPInfo")
+	}
+
 	info := strings.Split(split[0], "/")
+
+	if len(info) != 3 {
+		return result, errors.New("invalid TPInfo")
+	}
+
 	result.InputR = parseFloat(info[0])
 	result.InputS = parseFloat(info[1])
 	result.InputT = parseFloat(info[2])
 
 	info = strings.Split(split[1], "/")
+
+	if len(info) != 3 {
+		return result, errors.New("invalid TPInfo")
+	}
+
 	result.BypassR = parseFloat(info[0])
 	result.BypassS = parseFloat(info[1])
 	result.BypassT = parseFloat(info[2])
 
 	info = strings.Split(split[2], "/")
+
+	if len(info) != 3 {
+		return result, errors.New("invalid TPInfo")
+	}
+
 	result.OutputR = parseFloat(info[0])
 	result.OutputS = parseFloat(info[1])
 	result.OutputT = parseFloat(info[2])
 
-	return result
+	return result, nil
 }
 
-func ParseTPRating(split []string) TPRating {
+func ParseTPRating(split []string) (TPRating, error) {
 	var result TPRating
+
+	if len(split) != 8 {
+		return result, errors.New("invalid TPRating")
+	}
 
 	result.RectifierInfo = strings.TrimSpace(strings.Replace(split[0], "^", " ", -1))
 	result.RectifierFreq, _ = strconv.Atoi(split[1])
@@ -367,5 +400,5 @@ func ParseTPRating(split []string) TPRating {
 
 	result.PowerRating = strings.TrimSpace(strings.Replace(split[7], "^", " ", -1))
 
-	return result
+	return result, nil
 }

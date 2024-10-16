@@ -8,6 +8,8 @@ ExecStartPre=/bin/bash -c 'if [ -f /root/ups/santak-ups-snmp-server.new ]; then 
 ExecStart=/root/ups/santak-ups-snmp-server
 User=root
 WorkingDirectory=/root/ups
+Restart=always
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
