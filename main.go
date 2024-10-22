@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"io"
 	"net"
 	"os"
@@ -18,7 +19,6 @@ import (
 	"github.com/slayercat/GoSNMPServer"
 	"github.com/spf13/pflag"
 	"go.bug.st/serial/enumerator"
-	"gopkg.in/yaml.v3"
 )
 
 type User struct {
@@ -267,30 +267,43 @@ func main() {
 				}
 			}
 
-			snmp.AddTrap(config)
+			err := snmp.AddTrap(config)
+			if err != nil {
+				Logger.Fatalf("Add trap faild: %s", err.Error())
+			}
 		}
 	}
 
 	alarm.SetSNMP(snmp)
 
-	device.InitCallback(snmp, data)
+	err = device.InitCallback(snmp, data)
+	if err != nil {
+		Logger.Fatalf("Init device callback faild: %s", err.Error())
+		return
+	}
 
 	serial.SetUserData(snmp)
 
 	go func() {
+		send := func(data string) {
+			err := serial.Send(data)
+			if err != nil {
+				Logger.Errorf("Send data '%s' faild: %s", data, err.Error())
+			}
+		}
 		for {
 			select {
 			case <-sigs:
 				Logger.Infof("Received signal. Stopping send operation...")
 				return
 			default:
-				serial.Send(device.GetInfo)
-				serial.Send(device.GetRated)
-				serial.Send(device.GetManufacturer)
-				serial.Send(device.ExtraGetInfo)
-				serial.Send(device.ExtraGetError)
-				serial.Send(device.ExtraGetTPInfo)
-				serial.Send(device.ExtraGetRated)
+				send(device.GetInfo)
+				send(device.GetRated)
+				send(device.GetManufacturer)
+				send(device.ExtraGetInfo)
+				send(device.ExtraGetError)
+				send(device.ExtraGetTPInfo)
+				send(device.ExtraGetRated)
 
 				time.Sleep(time.Second * 1)
 			}
