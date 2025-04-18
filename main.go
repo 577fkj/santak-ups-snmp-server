@@ -441,8 +441,8 @@ func newLog(name string) *logrus.Logger {
 		rotatelogs.WithLinkName(filepath.Join("logs", name+"Log.log")),
 		rotatelogs.WithRotationTime(24*time.Hour), // 每 24 小时轮转一次
 		rotatelogs.WithRotationSize(10*1024*1024), // 当日志文件超过 10MB 时轮转
-		rotatelogs.WithMaxAge(7*24*time.Hour),     // 保留 7 天
-		rotatelogs.WithRotationCount(10),          // 最多 10 个文件
+		// rotatelogs.WithMaxAge(7*24*time.Hour),     // 保留 7 天
+		rotatelogs.WithRotationCount(10), // 最多 10 个文件
 	)
 	if err != nil {
 		panic(err)
@@ -454,8 +454,8 @@ func newLog(name string) *logrus.Logger {
 		rotatelogs.WithLinkName(filepath.Join("logs", name+"Error.log")),
 		rotatelogs.WithRotationTime(24*time.Hour), // 每 24 小时轮转一次
 		rotatelogs.WithRotationSize(10*1024*1024), // 当日志文件超过 10MB 时轮转
-		rotatelogs.WithMaxAge(7*24*time.Hour),     // 保留 7 天
-		rotatelogs.WithRotationCount(10),          // 最多 10 个文件
+		// rotatelogs.WithMaxAge(7*24*time.Hour),     // 保留 7 天
+		rotatelogs.WithRotationCount(10), // 最多 10 个文件
 	)
 	if err != nil {
 		panic(err)
