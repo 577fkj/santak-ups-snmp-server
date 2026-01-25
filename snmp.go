@@ -22,27 +22,34 @@ type AlarmEntry struct {
 }
 
 type SNMPDataIdent struct { // 基本信息
-	Manufacturer    string `snmp:"upsIdentManufacturer"`         // 制造商
-	Model           string `snmp:"upsIdentModel"`                // 型号
-	SoftwareVersion string `snmp:"upsIdentUPSSoftwareVersion"`   // UPS软件版本
-	AgentVersion    string `snmp:"upsIdentAgentSoftwareVersion"` // Agent软件版本
-	Name            string `snmp:"upsIdentName,w"`               // 名称
-	AttachedDevices string `snmp:"upsIdentAttachedDevices,w"`    // 连接设备
+	Manufacturer    string `snmp:"upsIdentManufacturer:upsIdentGroupManufacturer"`                 // 制造商
+	Model           string `snmp:"upsIdentModel:upsIdentGroupModel"`                               // 型号
+	SoftwareVersion string `snmp:"upsIdentUPSSoftwareVersion:upsIdentGroupUPSFirmwareVersion"`     // UPS软件版本
+	AgentVersion    string `snmp:"upsIdentAgentSoftwareVersion:upsIdentGroupAgentSoftwareVersion"` // Agent软件版本
+	Name            string `snmp:"upsIdentName,w:upsIdentGroupName,w"`                             // 名称
+	AttachedDevices string `snmp:"upsIdentAttachedDevices,w:upsIdentGroupAttachedDevices,w"`       // 连接设备
+
+	// USHA-MIB
+	SerialNumber string `snmp:"upsIdentGroupUpsSerialNumber"` // 序列号
 }
 
 type SNMPDataBattery struct { // 电池信息
-	Status  int `snmp:"upsBatteryStatus"`             // 状态 1: unknown, 2: batteryNormal, 3: batteryLow, 4: batteryDepleted
-	Seconds int `snmp:"upsSecondsOnBattery"`          // 已经在电池上运行的时间
-	Minutes int `snmp:"upsEstimatedMinutesRemaining"` // 估计剩余时间(分钟)
-	Charge  int `snmp:"upsEstimatedChargeRemaining"`  // 估计剩余电量(%) 0-100
-	Voltage int `snmp:"upsBatteryVoltage"`            // 电池电压
-	Current int `snmp:"upsBatteryCurrent"`            // 电池电流
-	Temp    int `snmp:"upsBatteryTemperature"`        // 电池温度
+	Status      int `snmp:"upsBatteryStatus:upsBatteryGroupStatus"`                                // 状态 1: unknown, 2: batteryNormal, 3: batteryLow, 4: batteryDepleted
+	Seconds     int `snmp:"upsSecondsOnBattery:upsBatteryGroupSecondsOnBattery"`                   // 已经在电池上运行的时间
+	Minutes     int `snmp:"upsEstimatedMinutesRemaining:upsBatteryGroupEstimatedMinutesRemaining"` // 估计剩余时间(分钟)
+	Charge      int `snmp:"upsEstimatedChargeRemaining:upsBatteryGroupEstimatedChargeRemaining"`   // 估计剩余电量(%) 0-100
+	Voltage     int `snmp:"upsBatteryVoltage:upsBatteryGroupVoltage"`                              // 电池电压
+	Current     int `snmp:"upsBatteryCurrent"`                                                     // 电池电流
+	Temp        int `snmp:"upsBatteryTemperature"`                                                 // 电池温度
+	Temperature int `snmp:"upsBatteryGroupTemperature"`                                            // 电池温度
+
+	// USHA-MIB
+	Mandatory int `snmp:"upsBatteryGroupMandatory"` // 是否为强制电池?
 }
 
 type SNMPDataInput struct { // 输入信息
-	LineBads int `snmp:"upsInputLineBads"` // 输入线路故障数
-	NumLines int `snmp:"upsInputNumLines"` // 输入线路数
+	LineBads int `snmp:"upsInputLineBads:upsInputGroupLineBads"` // 输入线路故障数
+	NumLines int `snmp:"upsInputNumLines:upsInputGroupNumLines"` // 输入线路数
 
 	// ------------------------------------------------
 	// Table: upsInputTable
@@ -55,9 +62,9 @@ type SNMPDataInput struct { // 输入信息
 }
 
 type SNMPDataOutput struct { // 输出信息
-	Source   int `snmp:"upsOutputSource"`    // 输出源 1: other, 2: none, 3: normal, 4: bypass, 5: battery, 6: booster, 7: reducer
-	Freq     int `snmp:"upsOutputFrequency"` // 输出频率
-	NumLines int `snmp:"upsOutputNumLines"`  // 输出线路数
+	Source   int `snmp:"upsOutputSource:upsOutputGroupSource"`       // 输出源 1: other, 2: none, 3: normal, 4: bypass, 5: battery, 6: booster, 7: reducer
+	Freq     int `snmp:"upsOutputFrequency:upsOutputGroupFrequency"` // 输出频率
+	NumLines int `snmp:"upsOutputNumLines:upsOutputGroupNumLines"`   // 输出线路数
 
 	// ------------------------------------------------
 	// Table: upsOutputTable
@@ -70,8 +77,8 @@ type SNMPDataOutput struct { // 输出信息
 }
 
 type SNMPDataBypass struct {
-	Freq     int `snmp:"upsBypassFrequency"`
-	NumLines int `snmp:"upsBypassNumLines"`
+	Freq     int `snmp:"upsBypassFrequency:upsBypassGroupFrequency"` // 旁路频率
+	NumLines int `snmp:"upsBypassNumLines:upsBypassGroupNumLines"`   // 旁路线路数
 
 	// ------------------------------------------------
 	// Table: upsBypassTable
@@ -94,12 +101,25 @@ type SNMPDataAlarm struct {
 }
 
 type SNMPDataTest struct {
-	Id             string    `snmp:"upsTestId,w"`           // 当前测试ID
-	SpinLock       int       `snmp:"upsTestSpinLock,w"`     // 测试锁，自旋锁
-	ResultsSummary int       `snmp:"upsTestResultsSummary"` // 测试状态 1: done, 2: done Warn, 3: done Error, 4: aborted, 5: in progress, 6: noRun
-	ResultsDetail  string    `snmp:"upsTestResultsDetail"`  // 测试结果
-	StartTime      TimesTamp `snmp:"upsTestStartTime"`      // 测试开始时间
-	ElapsedTime    TimesTamp `snmp:"upsTestElapsedTime"`    // 测试持续时间
+	Id             string    `snmp:"upsTestId,w"`                                      // 当前测试ID
+	SpinLock       int       `snmp:"upsTestSpinLock,w"`                                // 测试锁，自旋锁
+	ResultsSummary int       `snmp:"upsTestResultsSummary:upsTestBatteryTestResult"`   // 测试状态 1: done, 2: done Warn, 3: done Error, 4: aborted, 5: in progress, 6: noRun
+	ResultsDetail  string    `snmp:"upsTestResultsDetail"`                             // 测试结果
+	StartTime      TimesTamp `snmp:"upsTestStartTime:upsTestBatteryTestStartTime"`     // 测试开始时间
+	ElapsedTime    TimesTamp `snmp:"upsTestElapsedTime:upsTestBatteryTestElapsedTime"` // 测试持续时间
+
+	// USHA-MIB
+	BatteryTestSettingTime int `snmp:"upsTestBatteryTestSettingTime,w"` // 电池测试设置时间
+	BatteryTest            int `snmp:"upsBatteryTest,w"`                // 电池测试类型 1: none, 2: battTest10sec, 3: battTestUntilLow, 4: battTestWithTime, 5: battTestCancelTest, 6: battTestClearInfo
+
+	// upsBatteryTestScheduleTable // 电池测试计划表
+	// 		upsBatteryTestScheduleEntry // 电池测试计划条目
+	// 				upsBatteryTestScheduleIndex // 索引
+	// 				upsBatteryTestScheduleDay // 星期几
+	// 				upsBatteryTestScheduleTime // 时间
+	// 				upsBatteryTestScheduleType // 测试类型
+	// 				upsBatteryTestScheduleTestWithTime // 测试时间
+	// 				upsBatteryTestScheduleSpecialDay // 特殊日期
 
 	// --
 	// Id
@@ -112,36 +132,167 @@ type SNMPDataTest struct {
 }
 
 type SNMPDataControl struct {
-	ShutdownType   int `snmp:"upsShutdownType,w"`       // 1: output, 2: system
-	ShutdownAfter  int `snmp:"upsShutdownAfterDelay,w"` // 关机延迟时间
-	StartupAfter   int `snmp:"upsStartupAfterDelay,w"`  // 启动延迟时间
-	RebootDuration int `snmp:"upsRebootWithDuration,w"` // 重启持续时间
-	AutoRestart    int `snmp:"upsAutoRestart,w"`        // 1: on, 2: off
+	ShutdownType   int `snmp:"upsShutdownType,w"`                                    // 1: output, 2: system
+	ShutdownAfter  int `snmp:"upsShutdownAfterDelay,w:upsControlUpsShutdownDelay,w"` // 关机延迟时间
+	StartupAfter   int `snmp:"upsStartupAfterDelay,w"`                               // 启动延迟时间
+	RebootDuration int `snmp:"upsRebootWithDuration,w:upsControlUpsSleepTime,w"`     // 重启持续时间
+	AutoRestart    int `snmp:"upsAutoRestart,w"`                                     // 1: on, 2: off
+
+	// USHA-MIB
+	OnOffControl int `snmp:"upsControlUpsOnOffControl,w"` // 开关控制 1: turnUpsOff, 2: putUpsToSleep, 3: turnOnUpsOrCancelShutdown, 4: none
+
+	// upsControlShutdownParametersTable // 关机参数表
+	// 		upsControlShutdownParametersEntry // 关机参数条目
+	// 				upsControlEvent // 事件类型
+	// 				upsControlEventStatus // 事件状态
+	// 				upsControlDelay // 延迟时间
+	// 				upsControlFirstWarning // 首次警告时间
+	// 				upsControlWarningInterval // 警告间隔时间
+
+	// upsControlWeeklyScheduleTable // 每周计划表
+	// 		upsControlWeeklyScheduleEntry // 每周计划条目
+	// 				upsControlWeeklyIndex // 索引
+	// 				upsControlWeeklyShutdownDay // 关机星期几
+	// 				upsControlWeeklyShutdownTime // 关机时间
+	// 				upsControlWeeklyRestartDay // 重启星期几
+	// 				upsControlWeeklyRestartTime // 重启时间
+
+	// upsControlSpecialScheduleTable // 特殊计划表
+	// 		upsControlSpecialScheduleEntry // 特殊计划条目
+	// 				upsControlSpecialIndex // 索引
+	// 				upsControlSpecialShutdownDay // 特殊关机日期
+	// 				upsControlSpecialShutdownTime // 特殊关机时间
+	// 				upsControlSpecialRestartDay // 特殊重启日期
+	// 				upsControlSpecialRestartTime // 特殊重启时间
 }
 
 type SNMPDataConfig struct {
-	InputVoltage             int `snmp:"upsConfigInputVoltage,w"`
-	InputFreq                int `snmp:"upsConfigInputFreq,w"`
-	OutputVoltage            int `snmp:"upsConfigOutputVoltage,w"`
-	OutputFreq               int `snmp:"upsConfigOutputFreq,w"`
-	OutputVA                 int `snmp:"upsConfigOutputVA"`
-	OutputPower              int `snmp:"upsConfigOutputPower"`
+	InputVoltage             int `snmp:"upsConfigInputVoltage,w:upsConfigGroupInputVoltage"`
+	InputFreq                int `snmp:"upsConfigInputFreq,w:upsConfigGroupInputFreq"`
+	OutputVoltage            int `snmp:"upsConfigOutputVoltage,w:upsConfigGroupOutputVoltage"`
+	OutputFreq               int `snmp:"upsConfigOutputFreq,w:upsConfigGroupOutputFreq"`
+	OutputVA                 int `snmp:"upsConfigOutputVA:upsConfigGroupOutputVA"`
+	OutputPower              int `snmp:"upsConfigOutputPower:upsConfigGroupOutputPower"`
 	LowBatteryTime           int `snmp:"upsConfigLowBattTime,w"`
 	AudibleStatus            int `snmp:"upsConfigAudibleStatus,w"` // 蜂鸣器 1: disable, 2: enable, 3: mute
 	LowVoltageTransferPoint  int `snmp:"upsConfigLowVoltageTransferPoint,w"`
 	HighVoltageTransferPoint int `snmp:"upsConfigHighVoltageTransferPoint,w"`
+
+	// USHA-MIB
+	OverTemperatureSetPoint int `snmp:"upsConfigGroupOverTemperatureSetPoint,w"` // 过温设定点
+	OverLoadSetPoint        int `snmp:"upsConfigGroupOverLoadSetPoint,w"`        // 过载设定点
+}
+
+// USHA-MIB 注册关机客户端信息
+type SNMPDataUPSClients struct {
+	ConnectedNum int `snmp:"upsClientConnectedNum"` // 连接的客户端数量
+
+	// upsDevicesTable // 连接设备表
+	// 	upsDevicesEntry // 连接设备条目
+	// 		indexOfDevice // 设备索引
+	// 		addrOfDevice // 设备地址
+	// 		nameOfDevice // 设备名称
+	// 		timeOfConnection // 连接时间
+	// 		timeOfConnectionTime // 连接时间戳
+	// 		timeOfConnectionTimeout // 连接超时
+}
+
+// Agent 配置相关
+type SNMPDataAgentConfig struct {
+	IPAddress              string `snmp:"agentConfigIpaddress,w"`              // 设备IP地址
+	Gateway                string `snmp:"agentConfigGateway,w"`                // 网关地址
+	SubnetMask             string `snmp:"agentConfigSubnetMask,w"`             // 子网掩码
+	Date                   string `snmp:"agentConfigDate,w"`                   // 当前日期（格式，例如 YYYY-MM-DD）
+	Time                   string `snmp:"agentConfigTime,w"`                   // 当前时间（格式，例如 HH:MM:SS）
+	PrimaryTimeServer      string `snmp:"agentConfigPrimaryTimeServer,w"`      // 主时间服务器地址
+	SecondaryTimeServer    string `snmp:"agentConfigSecondaryTimeServer,w"`    // 备用时间服务器地址
+	HistoryLogFrequency    int    `snmp:"agentConfigHistoryLogFrequency,w"`    // 历史日志记录频率（单位可为分钟或条数，见MIB定义）
+	ExtHistoryLogFrequency int    `snmp:"agentConfigExtHistoryLogFrequency,w"` // 扩展历史日志记录频率
+	PollRate               int    `snmp:"agentConfigPollRate,w"`               // 轮询速率（秒）
+	BaudRate               int    `snmp:"agentConfigBaudRate"`                 // 串口波特率
+	DhcpStatue             int    `snmp:"agentConfigDhcpStatue,w"`             // DHCP 状态（例如 1: enabled, 2: disabled）
+	TelnetStatue           int    `snmp:"agentConfigTelnetStatue,w"`           // Telnet 服务状态（启用/禁用）
+	TftpStatue             int    `snmp:"agentConfigTftpStatue,w"`             // TFTP 服务状态（启用/禁用）
+	ResetToDefault         int    `snmp:"agentConfigResetToDefault,w"`         // 重置为默认配置（触发动作）
+	Restart                int    `snmp:"agentConfigRestart,w"`                // 重启设备（触发动作）
+	ClearAgentLog          int    `snmp:"agentConfigClearAgentLog,w"`          // 清除 Agent 日志（触发动作）
+	ClearEventLog          int    `snmp:"agentConfigClearEventLog,w"`          // 清除事件日志（触发动作）
+	ClearExtHistoryLog     int    `snmp:"agentConfigClearExtHistoryLog,w"`     // 清除扩展历史日志（触发动作）
+	ClearHistoryLog        int    `snmp:"agentConfigClearHistoryLog,w"`        // 清除历史日志（触发动作）
+	TrapRetryCount         int    `snmp:"agentConfigTrapRetryCount,w"`         // Trap 重试次数
+	TrapRetryTime          int    `snmp:"agentConfigTrapRetryTime,w"`          // Trap 重试间隔时间（秒）
+	TrapAckSignature       int    `snmp:"agentConfigTrapAckSignature,w"`       // Trap 确认签名开关（例如 1: on, 2: off）
+	MibVersion             string `snmp:"agentConfigMibVersion"`               // MIB 版本字符串
+	DefaultLanguage        string `snmp:"agentConfigDefaultLanguage,w"`        // 默认语言
+
+	// agentConfigTrapsReceiversTable // Trap 接收者表
+	//  agentConfigTrapsReceiversEntry
+	//      agentConfigTrapsReceiversIndex // 索引
+	//      agentConfigTrapsReceiversAddress // 接收者地址
+	//      agentConfigTrapsReceiversCommunity // 社区字符串
+	//      agentConfigTrapsReceiversVersion // SNMP 版本
+	//
+	// agentConfigAccessControlTable // 访问控制表
+	//  agentConfigAccessControlEntry
+	//      agentConfigAccessControlIndex // 索引
+	//      agentConfigAccessControlAddress // 允许/拒绝的地址
+	//      agentConfigAccessControlMask // 地址掩码
+	//      agentConfigAccessControlPermission // 权限（读/写/全部）
+}
+
+// EMD 状态（环境监测设备）
+type SNMPDataEmdStatus struct {
+	EmType      int `snmp:"emdSatatusEmdType"`     // EMD 类型标识
+	Temperature int `snmp:"emdSatatusTemperature"` // 当前温度（单位取决于设备，通常为 0.1°C 或 °C）
+	Humidity    int `snmp:"emdSatatusHumidity"`    // 当前湿度（百分比）
+	Alarm1      int `snmp:"emdSatatusAlarm1"`      // 报警1 状态（例如 1: normal, 2: alarm）
+	Alarm2      int `snmp:"emdSatatusAlarm2"`      // 报警2 状态
+}
+
+// USHA-MIB EMD 配置
+type SNMPDataEmdConfig struct {
+	UsahEmdConfigEmdConfig int    `snmp:"usahEmdConfigEmdConfig,w"` // USHA-MIB: EMD 配置索引或启用标志
+	EmdName                string `snmp:"emdConfigEmdName,w"`       // EMD 名称
+
+	// 温度相关
+	TempName         string `snmp:"emdConfigTempName,w"`         // 温度传感器名称
+	TempHighSetPoint int    `snmp:"emdConfigTempHighSetPoint,w"` // 温度高阈值（报警上限）
+	TempHighStatus   int    `snmp:"emdConfigTempHighStatus,w"`   // 温度高阈值报警状态
+	TempLowSetPoint  int    `snmp:"emdConfigTempLowSetPoint,w"`  // 温度低阈值（报警下限）
+	TempLowStatus    int    `snmp:"emdConfigTempLowStatus,w"`    // 温度低阈值报警状态
+	TempOffset       int    `snmp:"emdConfigTempOffset,w"`       // 温度偏移校正值
+
+	// 湿度相关
+	HumidityName         string `snmp:"emdConfigHumidityName,w"`         // 湿度传感器名称
+	HumidityHighSetPoint int    `snmp:"emdConfigHumidityHighSetPoint,w"` // 湿度高阈值
+	HumidityHighStatus   int    `snmp:"emdConfigHumidityHighStatus,w"`   // 湿度高阈值报警状态
+	HumidityLowSetPoint  int    `snmp:"emdConfigHumidityLowSetPoint,w"`  // 湿度低阈值
+	HumidityLowStatus    int    `snmp:"emdConfigHumidityLowStatus,w"`    // 湿度低阈值报警状态
+	HumidityOffset       int    `snmp:"emdConfigHumidityOffset,w"`       // 湿度偏移校正值
+
+	// 报警通道
+	Alarm1Name string `snmp:"emdConfigAlarm1Name,w"` // 报警1 名称
+	Alarm1Type int    `snmp:"emdConfigAlarm1Type,w"` // 报警1 类型
+
+	Alarm2Name string `snmp:"emdConfigAlarm2Name,w"` // 报警2 名称
+	Alarm2Type int    `snmp:"emdConfigAlarm2Type,w"` // 报警2 类型
 }
 
 type SNMPData struct {
-	Ident   *SNMPDataIdent   `snmp:"upsIdent"`
-	Battery *SNMPDataBattery `snmp:"upsBattery"`
-	Input   *SNMPDataInput   `snmp:"upsInput"`
-	Output  *SNMPDataOutput  `snmp:"upsOutput"`
-	Bypass  *SNMPDataBypass  `snmp:"upsBypass"`
-	Alarm   *SNMPDataAlarm   `snmp:"upsAlarm"`
-	Test    *SNMPDataTest    `snmp:"upsTest"`
-	Control *SNMPDataControl `snmp:"upsControl"`
-	Config  *SNMPDataConfig  `snmp:"upsConfig"`
+	Ident      *SNMPDataIdent      `snmp:"upsIdent"`
+	Battery    *SNMPDataBattery    `snmp:"upsBattery"`
+	Input      *SNMPDataInput      `snmp:"upsInput"`
+	Output     *SNMPDataOutput     `snmp:"upsOutput"`
+	Bypass     *SNMPDataBypass     `snmp:"upsBypass"`
+	Alarm      *SNMPDataAlarm      `snmp:"upsAlarm"`
+	Test       *SNMPDataTest       `snmp:"upsTest"`
+	Control    *SNMPDataControl    `snmp:"upsControl"`
+	Config     *SNMPDataConfig     `snmp:"upsConfig"`
+	UPSClients *SNMPDataUPSClients `snmp:"upsClients"`
+
+	AgentConfig *SNMPDataAgentConfig `snmp:"agentConfig"` // Agent 配置
+	EmdStatus   *SNMPDataEmdStatus   `snmp:"emdStatus"`   // EMD 状态
+	EmdConfig   *SNMPDataEmdConfig   `snmp:"emdConfig"`   // EMD 配置
 
 	UserData any
 }
@@ -219,28 +370,31 @@ func getFieldInfoFromType(t reflect.Type) []SNMPFieldInfo {
 
 		tag := field.Tag.Get("snmp")
 		if tag != "" {
-			// 解析snmp标签
-			parts := strings.Split(tag, ",")
-			id := parts[0]    // 第一个部分为OID
-			writable := false // 默认不可写
-			snmpType := ""    // 默认无类型
+			ids := strings.Split(tag, ":")
+			for _, id := range ids {
+				// 解析snmp标签
+				parts := strings.Split(id, ",")
+				m_id := parts[0]  // 第一个部分为OID
+				writable := false // 默认不可写
+				snmpType := ""    // 默认无类型
 
-			// 检查额外选项
-			for _, part := range parts[1:] {
-				if part == "w" {
-					writable = true
-				} else {
-					snmpType = part
+				// 检查额外选项
+				for _, part := range parts[1:] {
+					if part == "w" {
+						writable = true
+					} else {
+						snmpType = part
+					}
 				}
-			}
 
-			fieldInfos = append(fieldInfos, SNMPFieldInfo{
-				FieldName: field.Name,
-				Id:        id,
-				FieldType: getTypeName(field.Type),
-				Writable:  writable,
-				SNMPType:  snmpType,
-			})
+				fieldInfos = append(fieldInfos, SNMPFieldInfo{
+					FieldName: field.Name,
+					Id:        m_id,
+					FieldType: getTypeName(field.Type),
+					Writable:  writable,
+					SNMPType:  snmpType,
+				})
+			}
 		}
 
 		// 处理嵌套结构体或指针类型
@@ -319,32 +473,73 @@ func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNM
 		return nil
 	}
 
+	err = mib.LoadModules("USHA-MIB")
+	if err != nil {
+		master.Logger.Fatalf("Get MIB faild: %s", err.Error())
+		return nil
+	}
+
 	snmp.Mib = mib
 
 	ids := getFieldInfoFromType(reflect.TypeOf(SNMPData{}))
-	var currentData any
-	var currentEnable any
-	currentData = data
-	currentEnable = server_enable
+
+	// helper: 在 root 中查找名为 name 的字段（支持嵌套指针结构）
+	findField := func(root any, name string) (reflect.Value, bool) {
+		rv := reflect.ValueOf(root)
+		if !rv.IsValid() {
+			return reflect.Value{}, false
+		}
+		if rv.Kind() == reflect.Ptr {
+			if rv.IsNil() {
+				return reflect.Value{}, false
+			}
+			rv = rv.Elem()
+		}
+		if rv.Kind() != reflect.Struct {
+			return reflect.Value{}, false
+		}
+
+		// 直接查找
+		if f := rv.FieldByName(name); f.IsValid() {
+			return f, true
+		}
+
+		// 在顶级字段中查找嵌套结构的字段
+		for i := 0; i < rv.NumField(); i++ {
+			f := rv.Field(i)
+			if f.Kind() == reflect.Ptr {
+				if f.IsNil() {
+					continue
+				}
+				e := f.Elem()
+				if e.Kind() == reflect.Struct {
+					if ff := e.FieldByName(name); ff.IsValid() {
+						return ff, true
+					}
+				}
+			} else if f.Kind() == reflect.Struct {
+				if ff := f.FieldByName(name); ff.IsValid() {
+					return ff, true
+				}
+			}
+		}
+		return reflect.Value{}, false
+	}
+
 	for _, id := range ids {
 		m_id := id.Id
 		name := id.FieldName
 		type_name := id.FieldType
 
-		// 获取字段的值
-		field := reflect.ValueOf(currentData)
-		if field.Kind() == reflect.Ptr {
-			field = field.Elem() // 如果是指针，先解引用
-		}
-		field = field.FieldByName(name)
-
-		// 获取字段的值
-		enableField := reflect.ValueOf(currentEnable)
-		if enableField.Kind() == reflect.Ptr {
-			enableField = enableField.Elem() // 如果是指针，先解引用
+		// 在实际数据对象中查找字段
+		field, ok := findField(data, name)
+		if !ok {
+			master.Logger.Debugf("Skip unknown data field: %s", name)
+			continue
 		}
 
-		enableField = enableField.FieldByName(name)
+		// 在 server_enable 中查找对应的使能字段
+		enableField, okEnable := findField(server_enable, name)
 
 		oid, err := mib.OID(m_id)
 		if err != nil {
@@ -360,22 +555,26 @@ func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNM
 		case "TimesTamp":
 			tp = gosnmp.TimeTicks
 		default:
-			currentData = reflect.ValueOf(data).Elem().FieldByName(name).Interface()
-			currentEnableObj := reflect.ValueOf(server_enable).FieldByName(name)
-			if currentEnableObj.Kind() == reflect.Ptr {
-				currentEnableObj = currentEnableObj.Elem()
-			}
-			if currentEnableObj.IsValid() {
-				currentEnable = reflect.ValueOf(server_enable).FieldByName(name).Interface()
-			} else {
-				currentEnable = server_enable
-			}
+			// 非基础类型（结构体），不直接创建 OID，继续
 			continue
 		}
 
-		if !enableField.IsValid() || enableField.IsZero() {
-			master.Logger.Debugf("Skip service [%s](%s) %s", name, m_id, oid.String())
+		// 如果找不到 enable 字段或其值为零，则跳过
+		if !okEnable {
+			master.Logger.Debugf("Skip service [%s](%s) no enable info", name, m_id)
 			continue
+		}
+		// treat pointer enable fields
+		if enableField.Kind() == reflect.Ptr {
+			if enableField.IsNil() || enableField.Elem().IsZero() {
+				master.Logger.Debugf("Skip service [%s](%s) %s", name, m_id, oid.String())
+				continue
+			}
+		} else {
+			if enableField.IsZero() {
+				master.Logger.Debugf("Skip service [%s](%s) %s", name, m_id, oid.String())
+				continue
+			}
 		}
 
 		oid_str := fmt.Sprintf(".%s.0", oid.String())
@@ -405,15 +604,18 @@ func snmp_server(config SNMPConfig, server_enable SNMPData, data *SNMPData) *SNM
 				onSet = nil
 			}
 		}
+		// capture field, name locally for closure
+		fCopy := field
+		nameCopy := name
 		public.OIDs = append(public.OIDs, &GoSNMPServer.PDUValueControlItem{
 			OID:  oid_str,
 			Type: tp,
 			OnGet: func() (interface{}, error) {
-				master.Logger.Debugf("Get: %s", name)
-				if !field.IsValid() {
+				master.Logger.Debugf("Get: %s", nameCopy)
+				if !fCopy.IsValid() {
 					return nil, fmt.Errorf("field not found")
 				}
-				value := field.Interface()
+				value := fCopy.Interface()
 				master.Logger.Debugf("Get data: %s", value)
 				switch v := value.(type) {
 				case TimesTamp:

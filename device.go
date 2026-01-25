@@ -44,16 +44,18 @@ type Mt1000ProUserData struct {
 	Rating        RatingInfo
 	BatterySecond int
 	InputInfo     struct {
-		Voltage   int
-		Current   int
-		Frequency int
-		Power     int
+		Voltage      int
+		VoltageFloat float64
+		Current      int
+		Frequency    int
+		Power        int
 	}
 	OutputInfo struct {
-		Voltage int
-		Current int
-		Power   int
-		Load    int
+		Voltage      int
+		VoltageFloat float64
+		Current      int
+		Power        int
+		Load         int
 	}
 }
 
@@ -91,6 +93,7 @@ func Mt1000ProOnReceive(snmp *SNMP, data *SNMPData, value string) error {
 		}
 
 		data.Battery.Temp = int(math.Round(float64(v.Temperature)))
+		data.Battery.Temperature = int(math.Round(float64(v.Temperature) * 10))
 
 		// 电流 = (电流百分比 / 100) * 额定电流
 		current := (float64(v.OPCurrentPercent) / 100) * float64(rating.CurrentRating)
@@ -152,12 +155,14 @@ func Mt1000ProOnReceive(snmp *SNMP, data *SNMPData, value string) error {
 			alarm.RemoveWithDesc("upsAlarmInputBad")
 		}
 		userData.OutputInfo.Voltage = int(v.OPVoltage)
+		userData.OutputInfo.VoltageFloat = float64(v.OPVoltage)
 		userData.OutputInfo.Current = int(current * 10.0)
 		userData.OutputInfo.Power = int(float64(v.OPVoltage) * current)
 		userData.OutputInfo.Load = v.OPCurrentPercent
 
 		// Input
 		userData.InputInfo.Voltage = int(v.IPVoltage)
+		userData.InputInfo.VoltageFloat = float64(v.IPVoltage)
 		userData.InputInfo.Current = int(float64(current) * 10.0)
 		userData.InputInfo.Frequency = int(v.IPFreq * 10.0)
 		userData.InputInfo.Power = int(float64(v.OPVoltage) * current)
@@ -292,33 +297,71 @@ func Mt1000ProInit(snmp *SNMP, data *SNMPData) error {
 	data.Test.Id = snmp.GetOID("upsTestNoTestsInitiated", -1)
 	data.Test.ResultsSummary = 6
 
+	// USHA-MIB
+	data.Ident.SerialNumber = "MT1000-Pro-0001"
+
+	data.Config.OverTemperatureSetPoint = 70
+	data.Config.OverLoadSetPoint = 120
+
+	// 禁用 EMD
+	data.EmdConfig.UsahEmdConfigEmdConfig = 1
+	data.EmdStatus.EmType = 2
+	data.EmdStatus.Alarm1 = 2
+	data.EmdStatus.Alarm2 = 2
+	data.EmdConfig.EmdName = ""
+
+	data.EmdConfig.TempName = ""
+	data.EmdConfig.TempHighSetPoint = 0
+	data.EmdConfig.TempHighStatus = 2
+	data.EmdConfig.TempLowSetPoint = 0
+	data.EmdConfig.TempLowStatus = 2
+	data.EmdConfig.TempOffset = 0
+
+	data.EmdConfig.HumidityName = ""
+	data.EmdConfig.HumidityHighSetPoint = 0
+	data.EmdConfig.HumidityHighStatus = 2
+	data.EmdConfig.HumidityLowSetPoint = 0
+	data.EmdConfig.HumidityLowStatus = 2
+	data.EmdConfig.HumidityOffset = 0
+
+	data.EmdConfig.Alarm1Name = ""
+	data.EmdConfig.Alarm1Type = 1
+
+	data.EmdConfig.Alarm2Name = ""
+	data.EmdConfig.Alarm2Type = 1
+
 	data.UserData = &Mt1000ProUserData{}
 
 	onGet := func(obj any, index int) (any, error) {
 		name := obj.(string)
 		data := data.UserData.(*Mt1000ProUserData)
 		switch name {
-		case "upsInputLineIndex":
+		case "upsInputLineIndex", "upsInputGroupLineIndex":
 			return 1, nil
-		case "upsInputFrequency":
+		case "upsInputFrequency", "upsInputGroupFrequency":
 			return data.InputInfo.Frequency, nil
 		case "upsInputVoltage":
 			return data.InputInfo.Voltage, nil
-		case "upsInputCurrent":
+		case "upsInputCurrent", "upsInputGroupCurrent":
 			return data.InputInfo.Current, nil
-		case "upsInputTruePower":
+		case "upsInputTruePower", "upsInputGroupTruePower":
 			return data.InputInfo.Power, nil
 
-		case "upsOutputLineIndex", "upsBypassLineIndex":
+		case "upsOutputLineIndex", "upsBypassLineIndex", "upsOutputGroupLineIndex", "upsBypassGroupLineIndex":
 			return 1, nil
 		case "upsOutputVoltage", "upsBypassVoltage":
 			return data.OutputInfo.Voltage, nil
-		case "upsOutputCurrent", "upsBypassCurrent":
+		case "upsOutputCurrent", "upsBypassCurrent", "upsOutputGroupCurrent", "upsBypassGroupCurrent":
 			return data.OutputInfo.Current, nil
-		case "upsOutputPower", "upsBypassPower":
+		case "upsOutputPower", "upsBypassPower", "upsOutputGroupPower", "upsBypassGroupPower":
 			return data.OutputInfo.Power, nil
-		case "upsOutputPercentLoad":
+		case "upsOutputPercentLoad", "upsOutputGroupPercentLoad":
 			return data.OutputInfo.Load, nil
+
+		case "upsInputGroupVoltage":
+			return int(data.InputInfo.VoltageFloat * 10), nil
+		case "upsOutputGroupVoltage", "upsBypassGroupVoltage":
+			return int(data.OutputInfo.VoltageFloat * 10), nil
 		}
 		return nil, errors.New("not found")
 	}
@@ -339,6 +382,24 @@ func Mt1000ProInit(snmp *SNMP, data *SNMPData) error {
 	snmp.AddTable("upsBypassVoltage", "upsBypassVoltage", 1, gosnmp.Integer, onGet)
 	snmp.AddTable("upsBypassCurrent", "upsBypassCurrent", 1, gosnmp.Integer, onGet)
 	snmp.AddTable("upsBypassPower", "upsBypassPower", 1, gosnmp.Integer, onGet)
+
+	// USHA-MIB
+	snmp.AddTable("upsInputGroupLineIndex", "upsInputGroupLineIndex", 1, gosnmp.Integer, onGet)
+	snmp.AddTable("upsInputGroupFrequency", "upsInputGroupFrequency", 1, gosnmp.Integer, onGet)
+	snmp.AddTable("upsInputGroupVoltage", "upsInputGroupVoltage", 1, gosnmp.Integer, onGet)
+	snmp.AddTable("upsInputGroupCurrent", "upsInputGroupCurrent", 1, gosnmp.Integer, onGet)
+	snmp.AddTable("upsInputGroupTruePower", "upsInputGroupTruePower", 1, gosnmp.Integer, onGet)
+
+	snmp.AddTable("upsOutputGroupLineIndex", "upsOutputGroupLineIndex", 1, gosnmp.Integer, onGet)
+	snmp.AddTable("upsOutputGroupVoltage", "upsOutputGroupVoltage", 1, gosnmp.Integer, onGet)
+	snmp.AddTable("upsOutputGroupCurrent", "upsOutputGroupCurrent", 1, gosnmp.Integer, onGet)
+	snmp.AddTable("upsOutputGroupPower", "upsOutputGroupPower", 1, gosnmp.Integer, onGet)
+	snmp.AddTable("upsOutputGroupPercentLoad", "upsOutputGroupPercentLoad", 1, gosnmp.Integer, onGet)
+
+	snmp.AddTable("upsBypassGroupLineIndex", "upsBypassGroupLineIndex", 1, gosnmp.Integer, onGet)
+	snmp.AddTable("upsBypassGroupVoltage", "upsBypassGroupVoltage", 1, gosnmp.Integer, onGet)
+	snmp.AddTable("upsBypassGroupCurrent", "upsBypassGroupCurrent", 1, gosnmp.Integer, onGet)
+	snmp.AddTable("upsBypassGroupPower", "upsBypassGroupPower", 1, gosnmp.Integer, onGet)
 
 	snmp.Apply()
 
@@ -397,15 +458,17 @@ var Mt1000Pro = Device{
 			Model:           "1",
 			SoftwareVersion: "1",
 			AgentVersion:    "1",
+			SerialNumber:    "1",
 		},
 		Battery: &SNMPDataBattery{
-			Status:  1,
-			Seconds: 1,
-			Minutes: 1,
-			Charge:  1,
-			Voltage: 1,
-			Current: 1,
-			Temp:    1,
+			Status:      1,
+			Seconds:     1,
+			Minutes:     1,
+			Charge:      1,
+			Voltage:     1,
+			Current:     1,
+			Temp:        1,
+			Temperature: 1,
 		},
 		Bypass: &SNMPDataBypass{
 			NumLines: 1,
@@ -442,6 +505,39 @@ var Mt1000Pro = Device{
 			AudibleStatus:            1,
 			LowVoltageTransferPoint:  1,
 			HighVoltageTransferPoint: 1,
+			OverTemperatureSetPoint:  1,
+			OverLoadSetPoint:         1,
+		},
+		EmdConfig: &SNMPDataEmdConfig{
+			UsahEmdConfigEmdConfig: 1,
+			EmdName:                "1",
+
+			TempName:         "1",
+			TempHighSetPoint: 1,
+			TempLowSetPoint:  1,
+			TempLowStatus:    1,
+			TempHighStatus:   1,
+			TempOffset:       1,
+
+			HumidityName:         "1",
+			HumidityHighSetPoint: 1,
+			HumidityLowSetPoint:  1,
+			HumidityHighStatus:   1,
+			HumidityLowStatus:    1,
+			HumidityOffset:       1,
+
+			Alarm1Name: "1",
+			Alarm1Type: 1,
+
+			Alarm2Name: "1",
+			Alarm2Type: 1,
+		},
+		EmdStatus: &SNMPDataEmdStatus{
+			EmType:      1,
+			Temperature: 1,
+			Humidity:    1,
+			Alarm1:      1,
+			Alarm2:      1,
 		},
 	},
 

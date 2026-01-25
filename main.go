@@ -109,15 +109,18 @@ var defaultConfig = RunConfig{
 }
 
 var data = &SNMPData{
-	Ident:   &SNMPDataIdent{},
-	Battery: &SNMPDataBattery{},
-	Input:   &SNMPDataInput{},
-	Output:  &SNMPDataOutput{},
-	Bypass:  &SNMPDataBypass{},
-	Alarm:   &SNMPDataAlarm{},
-	Test:    &SNMPDataTest{},
-	Control: &SNMPDataControl{},
-	Config:  &SNMPDataConfig{},
+	Ident:       &SNMPDataIdent{},
+	Battery:     &SNMPDataBattery{},
+	Input:       &SNMPDataInput{},
+	Output:      &SNMPDataOutput{},
+	Bypass:      &SNMPDataBypass{},
+	Alarm:       &SNMPDataAlarm{},
+	Test:        &SNMPDataTest{},
+	Control:     &SNMPDataControl{},
+	Config:      &SNMPDataConfig{},
+	AgentConfig: &SNMPDataAgentConfig{},
+	EmdConfig:   &SNMPDataEmdConfig{},
+	EmdStatus:   &SNMPDataEmdStatus{},
 }
 
 var alarm = Alarm{}
@@ -322,25 +325,25 @@ func main() {
 		os.Exit(0)
 	}()
 
-	// snmp.AddPublicOID(&GoSNMPServer.PDUValueControlItem{
-	// 	OID:  ".1.3.6.1.2.1.1.1.0",
-	// 	Type: gosnmp.OctetString,
-	// 	OnGet: func() (value interface{}, err error) {
-	// 		return "UPS-System", nil
-	// 	},
-	// })
+	// Add RFC1213 sysDescr.0 and sysObjectID.0
+	snmp.AddPublicOID(&GoSNMPServer.PDUValueControlItem{
+		OID:  ".1.3.6.1.2.1.1.1.0",
+		Type: gosnmp.OctetString,
+		OnGet: func() (value interface{}, err error) {
+			return "UPS-System", nil
+		},
+	})
+	snmp.AddPublicOID(&GoSNMPServer.PDUValueControlItem{
+		OID:  ".1.3.6.1.2.1.1.2.0",
+		Type: gosnmp.ObjectIdentifier,
+		OnGet: func() (value interface{}, err error) {
+			return ".1.3.6.1.4.1.2468.1.2.1", nil // USHA-MIB
+		},
+	})
 
-	// snmp.AddPublicOID(&GoSNMPServer.PDUValueControlItem{
-	// 	OID:  ".1.3.6.1.2.1.1.2.0",
-	// 	Type: gosnmp.ObjectIdentifier,
-	// 	OnGet: func() (value interface{}, err error) {
-	// 		return ".1.3.6.1.2.1.33", nil
-	// 	},
-	// })
+	snmp.Apply()
 
-	// snmp.Apply()
-
-	// go runNCM()
+	go runNCM()
 
 	snmp.Run()
 }
@@ -351,46 +354,63 @@ func runNCM() {
 	// port 4679 DELL
 	// req <SCAN_REQUEST/>
 	// rep <SCAN macAddress="00:1A:2B:3C:4D:5E"/>
-	// 监听 UDP 地址和端口
+
 	addr := net.UDPAddr{
-		Port: 2993,                   // 设置服务器监听的端口
-		IP:   net.ParseIP("0.0.0.0"), // 监听所有网络接口
+		Port: 2993,
+		IP:   net.ParseIP("0.0.0.0"),
 	}
 
-	// 创建 UDP 连接
 	conn, err := net.ListenUDP("udp", &addr)
 	if err != nil {
-		fmt.Println("Error starting UDP server:", err)
+		Logger.Errorf("Error starting UDP server: %s", err.Error())
 		return
 	}
 	defer conn.Close()
-	fmt.Println("UDP server is listening on port 2993...")
+	Logger.Info("Santak NMC Card: listening on port 2993...")
 
-	// 缓冲区，用于存放接收到的数据
 	buffer := make([]byte, 1024)
-
-	// 循环读取来自客户端的消息
 	for {
-		// 读取 UDP 数据包
 		n, clientAddr, err := conn.ReadFromUDP(buffer)
 		if err != nil {
-			fmt.Println("Error reading from UDP:", err)
+			Logger.Errorf("Error reading from UDP: %s", err.Error())
 			continue
 		}
-
-		// 输出接收到的消息
-		fmt.Printf("Received message from %s: %s\n", clientAddr.String(), string(buffer[:n]))
-
+		Logger.Debugf("Received message from %s: %s\n", clientAddr.String(), string(buffer[:n]))
 		if string(buffer[:n]) == "<SCAN_REQUEST/>" {
-			// 发送消息给客户端
-			response := []byte("<SCAN macAddress=\"00:1A:2B:3C:4D:5E\"/>")
+			mac, err := getPrimaryMAC()
+			if err != nil {
+				Logger.Warnf("could not get MAC address, using fallback: %s", err.Error())
+				mac = "00:00:00:00:00:00"
+			}
+			response := []byte(fmt.Sprintf("<SCAN macAddress=\"%s\"/>", mac))
 			_, err = conn.WriteToUDP(response, clientAddr)
 			if err != nil {
-				fmt.Println("Error sending response:", err)
+				Logger.Errorf("Error sending response: %s", err.Error())
 				continue
 			}
 		}
 	}
+}
+
+func getPrimaryMAC() (string, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return "", err
+	}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 {
+			continue // interface down
+		}
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue // loopback
+		}
+		mac := iface.HardwareAddr.String()
+		if mac == "" {
+			continue
+		}
+		return strings.ToUpper(mac), nil
+	}
+	return "", fmt.Errorf("no valid MAC found")
 }
 
 func init() {
